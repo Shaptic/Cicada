@@ -47,18 +47,13 @@ with established encryption (specifically, peer-specific secret keys)
 beforehand.
 
 ## References ##
-[Chord Paper](
-    https://pdos.csail.mit.edu/papers/chord:sigcomm01/chord_sigcomm.pdf)
-
-[Chord Wikipedia](
-    https://en.wikipedia.org/wiki/Chord_project)
-
-[Diffie-Hellman Keys](
-    https://en.wikipedia.org/wiki/Diffie%E2%80%93Hellman_key_exchange)
+[Chord Paper](https://pdos.csail.mit.edu/papers/chord:sigcomm01/chord_sigcomm.pdf)  
+[Chord Wikipedia](https://en.wikipedia.org/wiki/Chord_project)  
+[Diffie-Hellman Keys](https://en.wikipedia.org/wiki/Diffie%E2%80%93Hellman_key_exchange)  
 
 ## Todo List ##
-[*] Allow a Chord node to join a ring correctly.
-[ ] Let the Chord ring recover from a failed node.
-[*] Threading for stabilization routine.
-[ ] Design and implement remote nodes and rings.
-[ ] Implement underlying p2p socket protocol.
+- [x] Allow a Chord node to join a ring correctly.
+- [ ] Let the Chord ring recover from a failed node.
+- [x] Threading for stabilization routine.
+- [ ] Design and implement remote nodes and rings.
+- [ ] Implement underlying p2p socket protocol.
