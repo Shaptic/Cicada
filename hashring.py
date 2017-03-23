@@ -154,6 +154,9 @@ class FingerTable(object):
     def findPredecessor(self, value):
         """ Finds the predecessor for a particular value. """
         start = self.root
+        if start.successor is None:     # no fingers yet
+            return start
+
         tmpEntry = Finger(start.hash, start.successor.hash)
         while not tmpEntry.isWithin_closedright(value):
             start = self.lookupPreceding(value)
@@ -163,9 +166,9 @@ class FingerTable(object):
     def lookupPreceding(self, value):
         """ Finds the finger table entry that comes before the given value.
         """
-        for i in xrange(len(self), -1, -1):
+        for i in xrange(len(self) - 1, -1, -1):
             n = self.finger(i).node
-            if n.isWithin_open(self.root.hash, value):
+            if Finger(self.root.hash, value).isWithin_open(n.hash):
                 return n
         return self.root
 

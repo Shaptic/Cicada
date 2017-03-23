@@ -56,10 +56,15 @@ https://en.wikipedia.org/wiki/Diffie%E2%80%93Hellman_key_exchange
 
  Todo List
 ===========
-[ ] Allow a Chord node to join a ring correctly.
+[*] Allow a Chord node to join a ring correctly.
+[ ] Let the Chord ring recover from a failed node.
 [*] Threading for stabilization routine.
 [ ] Design and implement remote nodes and rings.
-[ ] Underlying p2p socket protocol.
+[ ] Implement underlying p2p socket protocol.
+"""
+
+"""
+
 """
 
 import sys
@@ -87,6 +92,7 @@ class Stabilizer(threading.Thread):
             print "'THREAD: Stabilizing for:'"
             print "'THREAD:", self.node, "'"
             self.node.stabilize()
+            self.node.fixFingers()
             time.sleep(500)
 
 class ChordNode(object):
@@ -208,10 +214,6 @@ class LocalChordNode(ChordNode):
         # Always add node, because it could be better than some existing ones.
         self.addNode(homie)
 
-        # Sanity check that the first node is our successor.
-        if self.fingers.realLength <= 1:
-            assert self.successor == homie, "nodeJoined: first node not set!"
-
         # Is this node closer to us than our existing predecessor?
         if self.predecessor is None or \
            hashring.Finger(self.predecessor.hash, self.hash).isWithin(homie.hash):
@@ -265,10 +267,27 @@ class LocalChordNode(ChordNode):
         """
         self.pr("notify: trying", node)
         if self.predecessor is None or \
-           Finger(self.predecessor.hash, self.hash).isWithin(node):
+           hashring.Finger(self.predecessor.hash, self.hash).isWithin(node):
             self.predecessor = node
 
         assert self.predecessor != self, "notify: set self as predecessor!"
+
+def walk_ring(root, maxcount=10):
+    count = 0
+    firstOne = root
+    nextOne = firstOne.successor
+
+    yield firstOne
+    while nextOne is not None and \
+          root != nextOne and \
+          count < maxcount:   # so we don't do it too much if there's an error
+        yield nextOne
+        nextOne = nextOne.successor
+        count += 1
+
+def print_ring(root):
+    for node in walk_ring(root):
+        print node
 
 def main():
     address_ring = [
