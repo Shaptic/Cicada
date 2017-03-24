@@ -1,4 +1,12 @@
 """ A stripped-down implementation of the Chord protocol.
+
+ Todo List
+===========
+[*] Allow a Chord node to join a ring correctly.
+[ ] Let the Chord ring recover from a failed node.
+[*] Threading for stabilization routine.
+[ ] Design and implement remote nodes and rings.
+[ ] Implement underlying p2p socket protocol.
 """
 
 import sys
