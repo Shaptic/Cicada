@@ -1,4 +1,4 @@
-""" An stripped-down implementation of the Chord protocol.
+""" A stripped-down implementation of the Chord protocol.
 """
 
 import sys
