@@ -101,19 +101,41 @@ class LocalChordNode(ChordNode):
     def __init__(self, data):
         super(LocalChordNode, self).__init__(data)
 
+    @listify
     def addNode(self, node):
         """ Adds a node to the internal finger table.
 
         This means proper ordering in the finger table with respect to the
         node's hash value.
         """
-        if isinstance(node, (list, tuple)):
-            for x in node: self.addNode(x)
-
         assert isinstance(node, ChordNode), \
                "addNode: not a ChordNode object!"
 
         self.fingers.insert(node)
+
+    @listify
+    def removeNode(self, node):
+        """ Indicates a node has disconnected / failed in the Chord ring.
+        """
+        assert isinstance(node, ChordNode), \
+               "removeNode: not a ChordNode object!"
+
+        self.fingers.remove(node)
+
+        #
+        # If this node used to be our successor, replace it with the next
+        # available node. Likewise with the predecessor, except the previous
+        # available node.
+        #
+        # If this was the last node in the ring (excluding us) this should
+        # properly trigger the "first node" code path in `nodeJoined()`.
+        #
+
+        if self.successor is node:
+            self.successor = self.fingers.findSuccessor(node.hash + 1)
+
+        if self.predecessor is node:
+            self.predecessor = self.fingers.findPredecessor(node.hash - 1)
 
     def joinRing(self, homie):
         """ Joins a Chord ring using a specified node as its "entry".
@@ -150,7 +172,7 @@ class LocalChordNode(ChordNode):
 
         # Is this node closer to us than our existing predecessor?
         if self.predecessor is None or \
-           hashring.Finger(self.predecessor.hash, self.hash).isWithin(homie.hash):
+           hashring.Interval(self.predecessor.hash, self.hash).isWithin(homie.hash):
             self.predecessor = homie
 
     def stabilize(self):
@@ -179,7 +201,7 @@ class LocalChordNode(ChordNode):
         # We HAVE to use an open-ended range check, because if our successor's
         # predecessor is us (as it would be in the normal case), we'd be setting
         # us as our own successor!
-        if self.fingers.local.isWithin_open(x.hash):
+        if self.fingers.local.isWithinOpen(x.hash):
             self.fingers.setSuccessor(x)
         self.successor.notify(self)
 
@@ -191,8 +213,8 @@ class LocalChordNode(ChordNode):
         if thumb.node is None:
             return
 
+        self.pr("fixFingers: fixing finger(%d)" % index)
         self.pr("fixFingers: fingers are\n%s" % self.fingers)
-        raw_input("fixer")
         thumb.node = self.fingers.findSuccessor(thumb.start)
         self.pr("fixFingers: fingers are now\n%s" % self.fingers)
 
@@ -201,7 +223,7 @@ class LocalChordNode(ChordNode):
         """
         self.pr("notify: trying", node)
         if self.predecessor is None or \
-           hashring.Finger(self.predecessor.hash, self.hash).isWithin(node):
+           hashring.Interval(self.predecessor.hash, self.hash).isWithin(node):
             self.predecessor = node
 
         assert self.predecessor != self, "notify: set self as predecessor!"

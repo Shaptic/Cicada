@@ -42,29 +42,31 @@ def moddist(a, b, m=HASHMOD):
     if b >= a: return b - a
     return (m - a) + b
 
-class Finger(object):
-    """ Represents a single entry in a finger table.
+class Interval(object):
+    """ Represents an interval [a, b) in a modulus ring.
     """
-    def __init__(self, start, end, node=None, mod=HASHMOD):
+    def __init__(self, start, end, mod=HASHMOD):
         self.modulus = mod
         self.interval = (start, end)
-        self.node = node    # node to contact regarding keys in the interval
 
     def isWithin(self, x):
+        """ Is `x` within [start, end)? """
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start, self.modulus) or \
                    utils.in_range(x, 0, self.end)
 
         return utils.in_range(x, *self.interval)
 
-    def isWithin_open(self, x):
+    def isWithinOpen(self, x):
+        """ Is `x` within (start, end)? """
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start + 1, self.modulus) or \
                    utils.in_range(x, 0, self.end)
 
         return utils.in_range(x, self.start + 1, self.end)
 
-    def isWithin_closedright(self, x):
+    def isWithinClosed(self, x):
+        """ Is `x` within [start, end]? """
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start, self.modulus) or \
                    utils.in_range(x, 0, self.end + 1)
@@ -72,16 +74,25 @@ class Finger(object):
         return utils.in_range(x, self.start, self.end + 1)
 
     @property
-    def start(self):
-        return self.interval[0]
+    def start(self): return self.interval[0]
 
     @property
-    def end(self):
-        return self.interval[1]
+    def end(self): return self.interval[1]
 
     def __repr__(self): return str(self)
     def __str__(self):
-        return "[%d, %d) | %s" % (self.start, self.end, self.node)
+        return "[%d, %s)" % (self.start, self.end)
+
+class Finger(Interval):
+    """ Represents a single entry in a finger table.
+    """
+    def __init__(self, start, end, node=None, mod=HASHMOD):
+        super(Finger, self).__init__(start, end, mod)
+        self.node = node    # node to contact regarding keys in the interval
+
+    def __repr__(self): return str(self)
+    def __str__(self):
+        return "%s | %s" % (Interval.__str__(self), self.node)
 
 class FingerTable(object):
     """ Establishes a finger table for a particular node.
@@ -121,6 +132,7 @@ class FingerTable(object):
         """
 
         self.modulus = 2 ** bitcount
+        self.seenNodes = set()
         self.entries = [
             Finger((node.hash + 2 ** i) % self.modulus,
                    (node.hash + 2 ** (i + 1)) % self.modulus,
@@ -136,16 +148,57 @@ class FingerTable(object):
 
         TODO: Improve O(n) insertion.
         """
+        self.seenNodes.add(node)
+
         for i, f in enumerate(self.entries):
             # If this interval doesn't have a node associated with it
             #   OR
             # This node is closer to the start of the interval than the existing
             # node.
-            start = (self.root.hash + (2 ** i)) % self.modulus
             if f.node is None or (
                moddist(f.start, node.hash) < \
                moddist(f.start, f.node.hash)):
                 f.node = node
+
+    def remove(self, node):
+        """ Removes an existing node from the finger table.
+
+        If possible, the finger table entry will then point to the next
+        available node.
+
+        For example, removing <3> from the existing finger table: [
+            [0, 3)  -> <3>,
+            [3, 7)  -> <4>,
+            [8, 15) -> <4>,
+        ] should result in <4> for all intervals.
+
+        There are a few scenarios to consider:
+            - Removal of entries UP TO the end of the table.
+            - Removal of entries PAST the end of the table (i.e. a segment
+              within the ring, wrapping around the modulus).
+            - Removal of entries WITHIN the table without wrapping (this is
+              the "normal" case).
+
+        Each of these mean the same action: the first entry that follows the
+        removed ones is the new successor node.
+        """
+        self.seenNodes.discard(node)
+
+        removed = {}    # { index: cleaned node }
+        for i, f in enumerate(self.entries):
+            if f.node is node:
+                print "removing", f
+                removed[i] = f
+                f.node = None
+
+        # TODO: Optimize this, because they should all be the same?
+        print "fingers are now"
+        print self
+        for index, entry in removed.iteritems():
+            repl = self.findSuccessor(entry.start)
+            print "replacing with", repl
+            print "based on", entry
+            self.entries[index].node = repl
 
     def findSuccessor(self, value):
         """ Finds the successor node for a particular value. """
@@ -157,10 +210,10 @@ class FingerTable(object):
         if start.successor is None:     # no fingers yet
             return start
 
-        tmpEntry = Finger(start.hash, start.successor.hash)
-        while not tmpEntry.isWithin_closedright(value):
+        tmpEntry = Interval(start.hash, start.successor.hash, self.modulus)
+        while not tmpEntry.isWithinClosed(value):
             start = self.lookupPreceding(value)
-            tmpEntry = Finger(start.hash, start.successor.hash)
+            tmpEntry = Interval(start.hash, start.successor.hash, self.modulus)
         return start
 
     def lookupPreceding(self, value):
@@ -168,7 +221,7 @@ class FingerTable(object):
         """
         for i in xrange(len(self) - 1, -1, -1):
             n = self.finger(i).node
-            if Finger(self.root.hash, value).isWithin_open(n.hash):
+            if Interval(self.root.hash, value, self.modulus).isWithinOpen(n.hash):
                 return n
         return self.root
 
@@ -184,6 +237,7 @@ class FingerTable(object):
 
     @property
     def realLength(self):
+        """ Returns the number of unique nodes in the finger table. """
         return len(set([ self.finger(i).node for i in xrange(len(self)) ]))
 
     def __len__(self):  return len(self.entries)
@@ -195,7 +249,10 @@ class FingerTable(object):
 
 def optimizeFingerTable(fingers):
     """ Compresses a finger table by merging intervals with the same successor.
+
     TODO: Perform this optimization in-place? Is this even *necessary*?
+          How do you insert things into it efficiently? Maybe use a hash-map
+          of ranges? That is, { 1: node (implies [1, 5)), 5: node, ... }
     """
     if not fingers: return fingers
 
@@ -214,92 +271,3 @@ def optimizeFingerTable(fingers):
             inspect = fingers[old + 1]
 
     return merged
-
-class HashRing(object):
-    """ Manages the Chord hash ring relative to a node.
-
-    A prerequisite for the Chord protocol is the ability to create a "hash
-    ring," which is a sorted list of hash values that are pivoted around a
-    modulo -- the maximum hash value.
-
-            6 -- 7
-           /      \
-          4        1
-           \      /
-            3 -- 2
-
-    Imagine that a particular node hashes to 4. Then, it's communication
-    neighbors (finger table, in Chord protocol language) could be, for example,
-    [7, 2, 3]. When a new node is added to the ring, and it, for example, hashes
-    to 8, it has to be correctly inserted at the index 1 -- [7, 8, 2, 3].
-
-    There are many "weird" cases, and these are all handled in this object. This
-    is essentially just a wrapper around a rotated list, with the rotation
-    itself being emulated.
-    """
-
-    def __init__(self, node):
-        self.base_node = node
-        self.nodes = [ self.base_node ]
-
-    def insert(self, node):
-        """ Inserts a node in the proper position in the ring. """
-        pred = search.successor(node.hash, self.nodes, packed=True)
-        self.nodes.insert(pred, node)
-        assert sorted(self.nodes, key=lambda x: x.hash) == self.nodes
-
-    def finger(self, j):
-        """ Returns the j-th node in the ring, w.r.t. the root node. """
-        base   = self.index
-        length = len(self.nodes)
-
-        if j >= length:
-            print "[-] Finger table:"
-            print self
-            raise IndexError("Querying too many fingers: %d" % j)
-
-        if base + j >= length:  # we are wrapping past the end
-            j -= length - base
-            return self.nodes[j]
-        return self.nodes[base + j]
-
-    def plookup(self, node):
-        """ Finds the predecessor to the node in the finger table.
-
-        If the node exists, it's returned. Otherwise, it's the nearest node that
-        comes before it in the hash ring.
-        """
-        return self._lookup(node, search.predecessor)
-
-    def slookup(self, node):
-        """ Finds the successor to the node in the finger table.
-
-        If the node exists, it's returned. Otherwise, it's the first node that
-        comes after it in the hash ring.
-        """
-        return self._lookup(node, search.successor)
-
-    def _lookup(self, node, fn):
-        idx = fn(node.hash, self.nodes)
-
-        # If the node comes before the root node, we need to offset the index
-        # such that .finger(idx) == index.
-        #
-        # If the node comes after the root, we just subtract the root node
-        # index. If it comes before, we add the distance from the root node to
-        # the "end" of the ring.
-        if idx < self.index:
-            return idx + (len(self.nodes) - self.index)
-        return idx - self.index
-
-    @property
-    def index(self):
-        return self.nodes.index(self.base_node)
-
-    def __len__(self):  return len(self.nodes)
-    def __repr__(self): return str(self)
-    def __str__(self):
-        return "[ %s ]" % ('\n  '.join([
-            str(x.hash) if x != self.base_node else "%s*" % str(x.hash) \
-            for x in self.nodes
-        ]))
