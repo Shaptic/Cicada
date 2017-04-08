@@ -1,3 +1,5 @@
+import math
+
 def rad(deg):
     """ Converts a value to radians. """
     return (deg * math.pi) / 180.0

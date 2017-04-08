@@ -23,11 +23,11 @@ class Stabilizer(threading.Thread):
 
     def run(self):
         while self.running:
-            print "'THREAD: Stabilizing for:'"
-            print "'THREAD:", self.node, "'"
+            # print "'THREAD: Stabilizing for:'"
+            # print "'THREAD:", self.node, "'"
             self.node.stabilize()
             self.node.fixFingers()
-            time.sleep(500)
+            time.sleep(random.randint(3, 8))
 
 class ChordNode(object):
     """ Represents any Chord node.
@@ -47,6 +47,8 @@ class ChordNode(object):
         self.hash = hashring.pack_string(hashring.chord_hash(data))
         self.predecessor = None
         self.fingers = hashring.FingerTable(self)
+        self.stable = Stabilizer(self)
+        self.stable.start()
 
     def joinRing(self, homie):
         """ Joins a Chord ring via a node in the ring. """
@@ -65,7 +67,8 @@ class ChordNode(object):
         return self.fingers.finger(i)
 
     def pr(self, *args):
-        print "%s | %s" % (str(int(self))[:8], ' '.join([ str(x) for x in args ]))
+        print "%03s | %s" % (str(int(self))[:8],
+            ' '.join([ str(x) for x in args ]))
 
     @property
     def successor(self):
@@ -108,6 +111,7 @@ class LocalChordNode(ChordNode):
         This means proper ordering in the finger table with respect to the
         node's hash value.
         """
+        self.pr("addNode:", str(self), str(node))
         assert isinstance(node, ChordNode), \
                "addNode: not a ChordNode object!"
 
@@ -117,6 +121,7 @@ class LocalChordNode(ChordNode):
     def removeNode(self, node):
         """ Indicates a node has disconnected / failed in the Chord ring.
         """
+        self.pr("removeNode:", str(self), str(node))
         assert isinstance(node, ChordNode), \
                "removeNode: not a ChordNode object!"
 
@@ -144,6 +149,8 @@ class LocalChordNode(ChordNode):
         means that a join only involves asking our homie for our immediate
         successor. Then, we set that to be our successor.
         """
+        self.pr("joinRing:", str(self), str(homie))
+
         assert self.fingers.realLength <= 1, "joinRing: existing nodes!"
         assert self.predecessor is None,     "joinRing: predecessor set!"
 
@@ -165,6 +172,8 @@ class LocalChordNode(ChordNode):
 
         If it's our first node, though, it also gets added to the finger table!
         """
+        self.pr("nodeJoined:", str(self), str(homie))
+
         assert isinstance(homie, ChordNode), "nodeJoined: invalid node!"
 
         # Always add node, because it could be better than some existing ones.
@@ -183,12 +192,15 @@ class LocalChordNode(ChordNode):
         instead." Then, we tell n's successor about n. That way, the successor
         can learn about n if it didn't already know in the first place.
         """
-        print "stabilizing"
-        print self
-        print self.predecessor
-        print self.successor
-        print self.successor.predecessor
-        print self.fingers
+        if self.successor is None:  # nothing to stabilize, yet
+            return
+
+        # print "stabilizing"
+        # print self
+        # print self.predecessor
+        # print self.successor
+        # print self.successor.predecessor
+        # print self.fingers
 
         x = self.successor.predecessor
 
@@ -213,15 +225,15 @@ class LocalChordNode(ChordNode):
         if thumb.node is None:
             return
 
-        self.pr("fixFingers: fixing finger(%d)" % index)
-        self.pr("fixFingers: fingers are\n%s" % self.fingers)
+        # self.pr("fixFingers: fixing finger(%d)" % index)
+        # self.pr("fixFingers: fingers are\n%s" % self.fingers)
         thumb.node = self.fingers.findSuccessor(thumb.start)
-        self.pr("fixFingers: fingers are now\n%s" % self.fingers)
+        # self.pr("fixFingers: fingers are now\n%s" % self.fingers)
 
     def notify(self, node):
         """ Determine whether or not a node should be our predecessor.
         """
-        self.pr("notify: trying", node)
+        # self.pr("notify: trying", node)
         if self.predecessor is None or \
            hashring.Interval(self.predecessor.hash, self.hash).isWithin(node):
             self.predecessor = node
@@ -268,9 +280,6 @@ if __name__ == "__main__":
     print root
     print root.fingers
 
-    st = Stabilizer(root)
-    # st.start()
-
     # Add nodes to the ring and ensure finger tables are accurate.
     # for i in xrange(1, 4):#len(ring)):
     #     print "Joining node to root:"
@@ -281,8 +290,8 @@ if __name__ == "__main__":
     #     root.stabilize()
     #     ring[i].stabilize()
 
-    st.running = False
-    # st.join(1000)
-
     print "Done"
     print root.fingers
+
+    # for node in walk_ring(root):
+    #     root.stable.join(1000)

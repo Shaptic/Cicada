@@ -31,7 +31,7 @@ def pack_string(data):
         total += ord(c) << (8 * i)
     return total
 
-BITCOUNT = 4# len(chord_hash("0")) * 8
+BITCOUNT = 5# len(chord_hash("0")) * 8
 HASHMOD  = 2 ** BITCOUNT
 
 def khash(k):
@@ -212,7 +212,7 @@ class FingerTable(object):
 
         tmpEntry = Interval(start.hash, start.successor.hash, self.modulus)
         while not tmpEntry.isWithinClosed(value):
-            start = self.lookupPreceding(value)
+            start = start.fingers.lookupPreceding(value)
             tmpEntry = Interval(start.hash, start.successor.hash, self.modulus)
         return start
 
