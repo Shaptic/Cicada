@@ -1,5 +1,5 @@
 # Cicada #
-A resilient peer-to-peer routing protocol. 
+A resilient communication framework with peer-to-peer routing.
 
 ## Efficient Routing ##
 Routing uses the
