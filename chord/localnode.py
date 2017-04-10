@@ -1,101 +1,10 @@
-""" A stripped-down implementation of the Chord protocol.
-"""
-
-import sys
-import time
-import math
 import random
-import string
-import threading
 
-import pygame
+from . import hashring
+from . import utils
+from . import node
 
-import hashring
-import search
-from   utils import *
-
-class Stabilizer(threading.Thread):
-    """ Performs the Chord stabilization algorithm on a particular node. """
-    def __init__(self, node):
-        super(Stabilizer, self).__init__()
-        self.node = node
-        self.running = True
-
-    def run(self):
-        while self.running:
-            # print "'THREAD: Stabilizing for:'"
-            # print "'THREAD:", self.node, "'"
-            self.node.stabilize()
-            self.node.fixFingers()
-            time.sleep(random.randint(3, 8))
-
-class ChordNode(object):
-    """ Represents any Chord node.
-
-    There are certain properties -- such as the data hash -- which can be
-    computed locally. All other properties may involve network communication, so
-    we throw errors on those.
-    """
-
-    def __init__(self, data):
-        super(ChordNode, self).__init__()
-        #
-        # All Chord nodes exist in their own "ring" on initialization. They have
-        # an empty finger table (save themselves) and no predecessor reference.
-        #
-        self.data = data
-        self.hash = hashring.pack_string(hashring.chord_hash(data))
-        self.predecessor = None
-        self.fingers = hashring.FingerTable(self)
-        self.stable = Stabilizer(self)
-        self.stable.start()
-
-    def joinRing(self, homie):
-        """ Joins a Chord ring via a node in the ring. """
-        raise NotImplementedError
-
-    def nodeJoined(self, node):
-        """ Receives a join from a node outside of the ring. """
-        raise NotImplementedError
-
-    def stabilize(self):
-        """ Runs the Chord stabilization algorithm. """
-        raise NotImplementedError
-
-    def finger(self, i):
-        assert len(self.fingers) <= hashring.BITCOUNT, "Finger table too long!"
-        return self.fingers.finger(i)
-
-    def pr(self, *args):
-        print "%03s | %s" % (str(int(self))[:8],
-            ' '.join([ str(x) for x in args ]))
-
-    @property
-    def successor(self):
-        assert self.fingers.realLength >= 1, "successor: node is isolated!"
-        return self.finger(0).node
-
-    def __repr__(self): return str(self)
-    def __int__(self):  return self.hash
-    def norecstr(self): return "<%s | hash=%s>" % (self.data, str(int(self))[:8])
-    def __str__(self):  return "%s,pred=%s>" % (
-        self.norecstr()[:-1],
-        self.predecessor.norecstr() if self.predecessor is not None else "None")
-
-class RemoteChordNode(ChordNode):
-    """ Represents a remote Chord node in the hash ring.
-
-    The primary purpose of this object is to handle communication from a local
-    node to a remote node. It will cache properties within itself, but will
-    perform a remote lookup otherwise.
-
-    For example, accessing `RemoteChord.successor` MAY return a current value,
-    but may require actual network communication to determine the successor,
-    which is then cached.
-    """
-    pass
-
-class LocalChordNode(ChordNode):
+class LocalChordNode(node.ChordNode):
     """ Represents the current local node in the Chord hash ring.
 
     Specifically, this means the node exists *on this machine* and that no
@@ -104,7 +13,7 @@ class LocalChordNode(ChordNode):
     def __init__(self, data):
         super(LocalChordNode, self).__init__(data)
 
-    @listify
+    @utils.listify
     def addNode(self, node):
         """ Adds a node to the internal finger table.
 
@@ -117,7 +26,7 @@ class LocalChordNode(ChordNode):
 
         self.fingers.insert(node)
 
-    @listify
+    @utils.listify
     def removeNode(self, node):
         """ Indicates a node has disconnected / failed in the Chord ring.
         """
@@ -239,59 +148,3 @@ class LocalChordNode(ChordNode):
             self.predecessor = node
 
         assert self.predecessor != self, "notify: set self as predecessor!"
-
-def walk_ring(root, maxcount=10):
-    count = 0
-    firstOne = root
-    nextOne = firstOne.successor
-
-    yield firstOne
-    while nextOne is not None and \
-          root != nextOne and \
-          count < maxcount:   # so we don't do it too much if there's an error
-        yield nextOne
-        nextOne = nextOne.successor
-        count += 1
-
-def print_ring(root):
-    for node in walk_ring(root):
-        print node
-
-def main():
-    address_ring = [
-        ("192.168.0.1", 2016 + i) for i in xrange(10)
-    ]
-
-    nodes = sorted([
-        LocalChordNode("%s:%d" % _) for _ in address_ring
-    ], key=lambda x: x.hash)
-
-    return nodes
-
-if __name__ == "__main__":
-    # Establish a list of independent nodes.
-    ring = main()
-    print '\n'.join([ str(x) for x in ring ])
-    print
-
-    # We decide to begin the ring with the first node.
-    root = ring[0]
-    print "Root:"
-    print root
-    print root.fingers
-
-    # Add nodes to the ring and ensure finger tables are accurate.
-    # for i in xrange(1, 4):#len(ring)):
-    #     print "Joining node to root:"
-    #     print ring[i]
-    #     print ring[i].fingers
-    #     ring[i].joinRing(root)
-    #     root.fixFingers()
-    #     root.stabilize()
-    #     ring[i].stabilize()
-
-    print "Done"
-    print root.fingers
-
-    # for node in walk_ring(root):
-    #     root.stable.join(1000)

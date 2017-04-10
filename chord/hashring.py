@@ -1,14 +1,14 @@
-from   hashlib import sha1
+import hashlib
 
-import search
-import utils
+from . import search
+from . import utils
 
 USED = 0
 def chord_hash(data):
     global USED
     USED += 1
     return USED
-    # return sha1(data).digest()
+    return hashlib.sha1(data).digest()
 
 def pack_string(data):
     """ Turns a string into its unique numeric representation.

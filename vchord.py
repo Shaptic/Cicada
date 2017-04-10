@@ -2,10 +2,11 @@ import random
 import math
 
 import pygame
-import chord
-import utils
 
-class Visual_ChordNode(chord.LocalChordNode):
+from chord import localnode
+from chord import utils
+
+class Visual_ChordNode(localnode.LocalChordNode):
     def __init__(self, data):
         super(Visual_ChordNode, self).__init__(data)
         self.hashFont = pygame.font.SysFont("arial", 12)
