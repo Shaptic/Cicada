@@ -13,6 +13,18 @@ class LocalChordNode(node.ChordNode):
     def __init__(self, data):
         super(LocalChordNode, self).__init__(data)
 
+        # This socket is responsible for inbound connections (from new potential
+        # nodes). It is always in an "accept" state in a separate thread.
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        # This socket is used exclusively for joining a Chord ring. Once a node
+        # has joined a ring, this reference is removed and the socket is just a
+        # part of the peer list.
+        self.joiner = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        # These are all of the known direct neighbors in the Chord ring.
+        self.peers = []
+
     @utils.listify
     def addNode(self, node):
         """ Adds a node to the internal finger table.
