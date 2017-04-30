@@ -11,7 +11,6 @@ import threading
 
 import hashring
 import localnode
-import remotenode
 from utils   import *
 
 if __name__ == "__main__" and __package__ is None:
@@ -35,12 +34,21 @@ def print_ring(root):
         print node
 
 def main():
+    # Create a "virtual" Chord ring, in the sense that all of these "remote"
+    # addresses are still on the local machine, but are independent of each
+    # other.
+    #
+    # They are still unconnected.
+    print "main()"
     address_ring = [
-        ("192.168.0.1", 2016 + i) for i in xrange(10)
+        ("localhost", 4000 + i) for i in xrange(3)
     ]
 
+    # Transform these address pairs into real Chord nodes and their respective
+    # listener sockets.
     nodes = sorted([
-        localnode.LocalChordNode("%s:%d" % _) for _ in address_ring
+        localnode.LocalChordNode("%s:%d" % _, bind_addr=_) \
+            for _ in address_ring
     ], key=lambda x: x.hash)
 
     return nodes

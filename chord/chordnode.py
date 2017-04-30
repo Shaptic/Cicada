@@ -18,7 +18,7 @@ class Stabilizer(threading.Thread):
             # print "'THREAD: Stabilizing for:'"
             # print "'THREAD:", self.node, "'"
             self.node.stabilize()
-            self.node.fixFingers()
+            self.node.fix_fingers()
             time.sleep(random.randint(3, 8))
 
 class ChordNode(object):

@@ -1,21 +1,134 @@
+import threading
+import socket
+import select
 import random
+import time
 
 from . import hashring
 from . import utils
-from . import node
+from . import chordnode
+from . import peer
 
-class LocalChordNode(node.ChordNode):
+class ListenerThread(threading.Thread):
+    def __init__(self, parent, sock):
+        super(ListenerThread, self).__init__()
+        self.parent = parent
+        self.listener = sock
+        self.running = True
+        self.ready = False
+
+    def run(self):
+        while self.running:
+            rd, wr, er = select.select([ self.listener ], [], [ self.listener ], 1)
+            if rd:
+                client, addr = self.listener.accept()
+                print "Accepted", client, "from", addr
+                self.parent.dispatcher.add_peer(peer.Peer(client, addr))
+                self.ready = True
+
+            elif er:
+                print "An error occurred in the socket."
+                self.running = False
+                break
+
+class protocol:
+    MESSAGE_END = "\r\n"
+
+class ReadQueue(object):
+    def __init__(self):
+        self.queue = []
+        self.pending = ""
+        self.done = False
+
+    def read(self, sock):
+        data = sock.recv(512)
+        # import pdb; pdb.set_trace()
+        if not data:
+            self.done = True
+            return False
+
+        self.pending += data
+        index = self.pending.find(protocol.MESSAGE_END)
+        if index != -1:
+            self.queue.append(self.pending[:index])
+            self.pending = self.pending[index + len(protocol.MESSAGE_END):]
+        return True
+
+    @property
+    def ready(self):
+        return len(self.queue) > 0
+
+    def pop(self):
+        result = self.queue.pop(0)
+        return result
+
+class DispatchThread(threading.Thread):
+    """ Processes incoming messages from a list of sockets.
+    """
+    def __init__(self, parent):
+        super(DispatchThread, self).__init__()
+        self.read_queue = ReadQueue()
+        self.handler = parent
+        self.running = True
+        self.peers = { }    # dict -> { socket: (Peer, ReadQueue) }
+
+    def add_peer(self, peer_obj):
+        self.peers[peer_obj.peer_sock] = (peer_obj, ReadQueue())
+
+    def run(self):
+        while self.running:
+            if not self.peers:
+                continue
+
+            # Only try reading from the open peers. The list will be properly
+            # filtered later (TODO).
+            useable = [
+                pair[0].peer_sock for pair in filter(
+                    lambda x: not x[0].complete, self.peers.values())
+            ]
+            rd, wr, er = select.select(useable, [ ], useable, 1)
+
+            for sock in rd:
+                peer, queue = self.peers[sock]
+                if not queue.read(sock):
+                    print "Socket for %s closes." % peer.remote_addr
+                    peer.complete = True
+                    continue
+
+                while queue.ready:
+                    msg = queue.pop()
+                    self.handler.process(peer, msg)
+
+            if er:
+                print "An error occurred in the socket."
+                self.running = False
+                break
+
+class LocalChordNode(chordnode.ChordNode):
     """ Represents the current local node in the Chord hash ring.
 
     Specifically, this means the node exists *on this machine* and that no
     remote lookups or network communication is necessary.
     """
-    def __init__(self, data):
-        super(LocalChordNode, self).__init__(data)
+    def __init__(self, data, bind_addr=('localhost', 2017)):
+        print "__init__(%s, %s)" % (data, bind_addr)
 
         # This socket is responsible for inbound connections (from new potential
         # nodes). It is always in an "accept" state in a separate thread.
+        self.local_addr = bind_addr
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listener.bind(self.local_addr)
+        self.listener.listen(5)
+
+        print "Starting listener thread for", self.listener
+        self.listen_thread = ListenerThread(self, self.listener)
+        self.listen_thread.start()
+
+        # This thread is responsible for handling the messages from all of the
+        # peers we're connected to.
+        self.dispatcher = DispatchThread(self)
+        self.dispatcher.start()
 
         # This socket is used exclusively for joining a Chord ring. Once a node
         # has joined a ring, this reference is removed and the socket is just a
@@ -23,28 +136,33 @@ class LocalChordNode(node.ChordNode):
         self.joiner = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # These are all of the known direct neighbors in the Chord ring.
-        self.peers = []
+        self.peers = [ ]
+
+        # This is for processing async IO operations.
+        self.threads = [ ]
+
+        super(LocalChordNode, self).__init__(data)
 
     @utils.listify
-    def addNode(self, node):
+    def add_node(self, node):
         """ Adds a node to the internal finger table.
 
         This means proper ordering in the finger table with respect to the
         node's hash value.
         """
-        self.pr("addNode:", str(self), str(node))
-        assert isinstance(node, ChordNode), \
-               "addNode: not a ChordNode object!"
+        self.pr("add_node:", str(self), str(node))
+        assert isinstance(node, chordnode.ChordNode), \
+               "add_node: not a ChordNode object!"
 
         self.fingers.insert(node)
 
     @utils.listify
-    def removeNode(self, node):
+    def remove_node(self, node):
         """ Indicates a node has disconnected / failed in the Chord ring.
         """
-        self.pr("removeNode:", str(self), str(node))
-        assert isinstance(node, ChordNode), \
-               "removeNode: not a ChordNode object!"
+        self.pr("remove_node:", str(self), str(node))
+        assert isinstance(node, chordnode.ChordNode), \
+               "remove_node: not a ChordNode object!"
 
         self.fingers.remove(node)
 
@@ -63,28 +181,38 @@ class LocalChordNode(node.ChordNode):
         if self.predecessor is node:
             self.predecessor = self.fingers.findPredecessor(node.hash - 1)
 
-    def joinRing(self, homie):
+    def join_ring(self, homie):
         """ Joins a Chord ring using a specified node as its "entry".
 
         We use the stabilization technique outlined in the Chord paper, which
         means that a join only involves asking our homie for our immediate
         successor. Then, we set that to be our successor.
         """
-        self.pr("joinRing:", str(self), str(homie))
+        self.pr("join_ring:", str(self), str(homie))
 
-        assert self.fingers.realLength <= 1, "joinRing: existing nodes!"
-        assert self.predecessor is None,     "joinRing: predecessor set!"
+        assert self.fingers.realLength <= 1, "join_ring: existing nodes!"
+        assert self.predecessor is None,     "join_ring: predecessor set!"
 
         self.predecessor = None
-        succ = homie.fingers.findSuccessor(self.hash)   # our would-be successor
-        if succ is None:        # our homie is the only node!
-            succ = homie
-        self.addNode(succ)      # add successor to our own finger table
-        succ.nodeJoined(self)   # notify successor that we joined to them
 
-        assert self.successor == succ, "joinRing: successor not set!"
+        # Create a Peer object that represents the external node that we are
+        # using to join the ring. After this JOIN request has been processed
+        # (that is, the RJOIN response has been received), the joiner socket is
+        # moved to the peer list.
+        #
+        # After this, the peer list contains, additionally, the successor of us
+        # as well as the peer we used to join the ring.
+        p = peer.Peer(self.joiner, homie)
+        succ = p.join_ring()
+        self.add_node(succ)
 
-    def nodeJoined(self, homie):
+        self.peers.append(p)
+        self.peers.append(succ)
+
+        import pdb; pdb.set_trace()
+        assert self.successor == succ, "Invalid successor!"
+
+    def node_joined(self, homie_peer):
         """ Receives a HELLO message from a node previously outside the ring.
 
         Chord specifies that this occurs when a new node joins the ring and
@@ -93,16 +221,17 @@ class LocalChordNode(node.ChordNode):
 
         If it's our first node, though, it also gets added to the finger table!
         """
-        self.pr("nodeJoined:", str(self), str(homie))
+        self.pr("node_joined:", str(self), str(homie))
 
-        assert isinstance(homie, ChordNode), "nodeJoined: invalid node!"
+        assert isinstance(homie_peer, Peer), "node_joined: invalid node!"
 
         # Always add node, because it could be better than some existing ones.
-        self.addNode(homie)
+        self.add_node(homie)
 
         # Is this node closer to us than our existing predecessor?
         if self.predecessor is None or \
-           hashring.Interval(self.predecessor.hash, self.hash).isWithin(homie.hash):
+           hashring.Interval(
+                self.predecessor.hash, self.hash).isWithin(homie.hash):
             self.predecessor = homie
 
     def stabilize(self):
@@ -138,7 +267,7 @@ class LocalChordNode(node.ChordNode):
             self.fingers.setSuccessor(x)
         self.successor.notify(self)
 
-    def fixFingers(self):
+    def fix_fingers(self):
         """ This ensures that the finger table is current.
         """
         index = random.randint(1, len(self.fingers) - 1)
@@ -160,3 +289,16 @@ class LocalChordNode(node.ChordNode):
             self.predecessor = node
 
         assert self.predecessor != self, "notify: set self as predecessor!"
+
+    def process(self, peer, message):
+        print "Peer %s received message %s" % (peer.remote_addr, message)
+
+        # Respond to a JOIN request with an RJOIN containing our successor's
+        # address info.
+        if message == "JOIN":
+            msg = "RJOIN:"
+            if self.successor is not None:
+                msg += ','.join(self.successor.remote_addr)
+            else:
+                msg += "NONE"
+            peer.peer_sock.sendall(msg)

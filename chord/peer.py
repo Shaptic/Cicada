@@ -29,9 +29,22 @@ a direct communication line to another LocalNode.Peers[index_2] socket instance
 that exists elsewhere.
 """
 
-from . import node
+# Simulation:
+#   chord_addr = ('192.168.0.101', 2016)
+#   local_peer = LocalChordNode(host_addr)
+#   local_peer.joiner.connect(chord_addr)
+#   chord_succcesor = local_peer.joiner.recv(1024)
 
-class RemoteChordNode(node.ChordNode):
+import select
+from . import chordnode
+
+def parse_successor(data):
+    index = data.find("NONE")
+    if index == -1:
+        return data.split(',')
+    return "NONE"
+
+class Peer(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
 
     The primary purpose of this object is to handle communication from a local
@@ -63,30 +76,51 @@ class RemoteChordNode(node.ChordNode):
         The address is the receiving end of the socket of the `LocalChordNode`
         that we're connecting to.
         """
-        super(RemoteChordNode, self).__init__("")
         if not isinstance(remote_addr, tuple):
-            raise TypeError("Must join ring via address pair!")
+            raise TypeError("Must join ring via address pair, got %s!" % remote_addr)
 
         self.peer_sock = joiner_sock
         self.remote_addr = remote_addr
+        self.complete = False   # set when the socket closes
 
-        self.peer_sock.sendall("JOIN")
-        resp = self.peer_sock.recv(1024)
+        super(Peer, self).__init__("%s:%d" % remote_addr)
 
-        succ = homie.fingers.findSuccessor(self.hash)   # our would-be successor
-        if succ is None:        # our homie is the only node!
-            succ = homie
-        self.addNode(succ)      # add successor to our own finger table
-        succ.nodeJoined(self)   # notify successor that we joined to them
+    def join_ring(self):
+        """ Joins a Chord ring by sending a JOIN message.
 
-        assert self.successor == succ, "joinRing: successor not set!"
-
-        return super(RemoteChordNode, self).__init__(homie)
-
-    def nodeJoined(self, homie):
-        """ A local node will send a JOIN request to a remote one.
-
-        We need to transmit the request across our socket and await the response
-        in order to update internal state.
+        The return value is either an error or a message describing the
+        successor of this node. The message also implicitly notifies the node
+        that we're joining of our existence.
         """
-        pass
+
+        # This will be done using a proper protocol soon.
+        print "Waiting on JOIN response..."
+        self.peer_sock.connect(self.remote_addr)
+        self.peer_sock.sendall("JOIN\r\n")
+        read_list, _, _ = select.select([ self.peer_sock ], [ ], [ ], 5)
+        if read_list:
+            resp = read_list[0].recv(1024)
+            print "Joiner got response:", resp
+
+            if resp.startswith("RJOIN:"):
+                # The socket will return the successor node corresponding to this
+                # node. Thus, we create a new Peer node that represents this
+                # successor and return it.
+                #
+                # The peer is represented just by a remote address, which we parse.
+                # If it doesn't exist, we just use the address we used to connect
+                # to the ring, instead.
+                addr = parse_successor(resp)
+                if addr == "NONE":  # our homie is the only node!
+                    addr = self.remote_addr
+
+                print "connected peer is at", addr
+                return Peer(self.peer_sock, addr)
+
+            raise ValueError("Invalid format! %s" % repr(resp))
+
+        else:
+            raise ValueError("Timed out waiting for listener response!")
+
+    def stabilize(self):
+        return
