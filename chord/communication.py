@@ -119,7 +119,7 @@ class ListenerThread(InfiniteThread):
                                    ListenerThread.TIMEOUT)
         if rd:
             client, addr = self.listener.accept()
-            print "Accepted", client, "from", addr
+            print "Accepted peer from", addr
             self.parent.dispatcher.add_peer(client, addr)
             # self.signal()
 

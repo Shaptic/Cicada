@@ -41,7 +41,7 @@ def main():
     # They are still unconnected.
     print "main()"
     address_ring = [
-        ("localhost", 4000 + i) for i in xrange(3)
+        ("192.168.0.104", 4000 + i) for i in xrange(3)
     ]
 
     # Transform these address pairs into real Chord nodes and their respective

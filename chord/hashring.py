@@ -3,12 +3,12 @@ import hashlib
 from . import search
 from . import utils
 
-USED = 0
+BITCOUNT = 5# len(chord_hash("0")) * 8
+HASHMOD  = 2 ** BITCOUNT
+
+
 def chord_hash(data):
-    global USED
-    USED += 1
-    return USED
-    return hashlib.sha1(data).digest()
+    return str(hashlib.sha1(data).digest())[:1]
 
 def pack_string(data):
     """ Turns a string into its unique numeric representation.
@@ -29,10 +29,9 @@ def pack_string(data):
     total = 0
     for i, c in enumerate(data):
         total += ord(c) << (8 * i)
-    return total
 
-BITCOUNT = 5# len(chord_hash("0")) * 8
-HASHMOD  = 2 ** BITCOUNT
+    print "Hash for %s -- %d" % (repr(data), total)
+    return total
 
 def khash(k):
     return (2 ** k) % HASHMOD
@@ -42,6 +41,7 @@ def moddist(a, b, m=HASHMOD):
     if b >= a: return b - a
     return (m - a) + b
 
+
 class Interval(object):
     """ Represents an interval [a, b) in a modulus ring.
     """
@@ -49,7 +49,7 @@ class Interval(object):
         self.modulus = mod
         self.interval = (start, end)
 
-    def isWithin(self, x):
+    def within(self, x):
         """ Is `x` within [start, end)? """
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start, self.modulus) or \
@@ -57,7 +57,7 @@ class Interval(object):
 
         return utils.in_range(x, *self.interval)
 
-    def isWithinOpen(self, x):
+    def within_open(self, x):
         """ Is `x` within (start, end)? """
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start + 1, self.modulus) or \
@@ -65,7 +65,7 @@ class Interval(object):
 
         return utils.in_range(x, self.start + 1, self.end)
 
-    def isWithinClosed(self, x):
+    def within_closed(self, x):
         """ Is `x` within [start, end]? """
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start, self.modulus) or \
@@ -83,6 +83,7 @@ class Interval(object):
     def __str__(self):
         return "[%d, %s)" % (self.start, self.end)
 
+
 class Finger(Interval):
     """ Represents a single entry in a finger table.
     """
@@ -93,6 +94,7 @@ class Finger(Interval):
     def __repr__(self): return str(self)
     def __str__(self):
         return "%s | %s" % (Interval.__str__(self), self.node)
+
 
 class FingerTable(object):
     """ Establishes a finger table for a particular node.
@@ -132,7 +134,7 @@ class FingerTable(object):
         """
 
         self.modulus = 2 ** bitcount
-        self.seenNodes = set()
+        self.seen_nodes = set()
         self.entries = [
             Finger((node.hash + 2 ** i) % self.modulus,
                    (node.hash + 2 ** (i + 1)) % self.modulus,
@@ -148,7 +150,7 @@ class FingerTable(object):
 
         TODO: Improve O(n) insertion.
         """
-        self.seenNodes.add(node)
+        self.seen_nodes.add(node)
 
         for i, f in enumerate(self.entries):
             # If this interval doesn't have a node associated with it
@@ -182,7 +184,7 @@ class FingerTable(object):
         Each of these mean the same action: the first entry that follows the
         removed ones is the new successor node.
         """
-        self.seenNodes.discard(node)
+        self.seen_nodes.discard(node)
 
         removed = {}    # { index: cleaned node }
         for i, f in enumerate(self.entries):
@@ -195,38 +197,35 @@ class FingerTable(object):
         print "fingers are now"
         print self
         for index, entry in removed.iteritems():
-            repl = self.findSuccessor(entry.start)
+            repl = self.find_successor(entry.start)
             print "replacing with", repl
             print "based on", entry
             self.entries[index].node = repl
 
-    def findSuccessor(self, value):
+    def find_successor(self, value):
         """ Finds the successor node for a particular value. """
-        return self.findPredecessor(value).successor
+        return self.find_predecessor(value).successor
 
-    def findPredecessor(self, value):
+    def find_predecessor(self, value):
         """ Finds the predecessor for a particular value. """
         start = self.root
         if start.successor is None:     # no fingers yet
             return start
 
         tmpEntry = Interval(start.hash, start.successor.hash, self.modulus)
-        while not tmpEntry.isWithinClosed(value):
-            start = start.fingers.lookupPreceding(value)
+        while not tmpEntry.within_closed(value):
+            start = start.fingers.lookup_preceding(value)
             tmpEntry = Interval(start.hash, start.successor.hash, self.modulus)
         return start
 
-    def lookupPreceding(self, value):
+    def lookup_preceding(self, value):
         """ Finds the finger table entry that comes before the given value.
         """
         for i in xrange(len(self) - 1, -1, -1):
             n = self.finger(i).node
-            if Interval(self.root.hash, value, self.modulus).isWithinOpen(n.hash):
+            if Interval(self.root.hash, value, self.modulus).within_open(n.hash):
                 return n
         return self.root
-
-    def setSuccessor(self, node):
-        self.successor.node = node
 
     def finger(self, i):
         return self.entries[i]
@@ -235,8 +234,12 @@ class FingerTable(object):
     def successor(self):
         return self.finger(0)
 
+    @successor.setter
+    def successor(self, node):
+        self.successor.node = node
+
     @property
-    def realLength(self):
+    def real_length(self):
         """ Returns the number of unique nodes in the finger table. """
         return len(set([ self.finger(i).node for i in xrange(len(self)) ]))
 
@@ -247,7 +250,8 @@ class FingerTable(object):
             str(self.finger(i)) for i in xrange(len(self))
         ])
 
-def optimizeFingerTable(fingers):
+
+def optimize_finger_table(fingers):
     """ Compresses a finger table by merging intervals with the same successor.
 
     TODO: Perform this optimization in-place? Is this even *necessary*?

@@ -1,3 +1,87 @@
+""" Contains packet-layer descriptions of the Cicada protocol.
+
+# Message Types #
+
+There are two main categories of message types: those belonging to the low-
+level Chord protocol, and those belonging to the higher-level Cicada protocol
+which facilitates the organization of independent Chord rings and nodes.
+
+The messages in the Chord protocol use the constant identifier `0x6368` (`ch`)
+whereas those in the Cicada protocol use `0x6369` (`ci`) in their message
+headers.
+
+The header format is as follows:
+
+    - 2-byte protocol identifier.
+    - 2-byte protocol version.
+    - 2-byte message type.
+    - 8-byte sequence number to uniquely identify the message.
+    - 4-byte checksum of the entire message, excluding the checksum field
+             itself, which is treated as zeroed-out.
+    - 4-byte payload length, `P`, which is excluding the header.
+    - 1-byte padding length, `Z`, which is the amount of padding needed to get
+             a word-aligned packet (including payload).
+    - Z-byte padding of `NUL` bytes (`0x00`).
+    - 1-byte indicator of whether this is a request, response, or error. We've
+             already included the full message type earlier, but this is a
+             quick way to identify it.
+
+For responses and errors, there are additional fields:
+    - 8-byte sequence number
+  and
+    - 4-byte checksum of the message we're responding to.
+
+The message content, then, is just a `P`-byte payload followed by a 2-byte
+message terminator, `0x474b04` (`GK[end-of-transmission byte]`).
+
+In total, including padding, the minimum message size is:
+    2 + 2 + 2 + 8 + 4 + 4 + 1 + 1 + 5 [0x00 pad] + 3 = 32 bytes.
+
+Each message is either a request or a response. The response type constant is +1
+to the request type for easy correlation.
+
+In Chord, we are concerned with the following message pairs:
+
+    - Join          Sent on initialization by a new node (the invitee) to an
+        |           existing Chord ring, indicating a request to join.
+      JoinResp      Send by the inviter in response containing the address of
+                    the successor node that follows the invitee.
+
+    - Notify        After joining, a fresh node will notify other nodes about
+        |           its existence, in order to allow those nodes to update their
+        |           predecessors to point to this fresh node if need be.
+      NotifyResp    An indication of whether or not the node has become this
+                    node's new predecessor. If it has, the original node may set
+                    it as its successor to create the optimal ring.
+
+    - Info          This is a request to another node for all of its internal
+        |           state.
+      InfoResp      This is an info update representing a node in its entirety
+                    to another. This includes the predecessor and successor
+                    addresses and its local finger table.
+
+    - Error         This can be sent as a request for any reason (for which
+                    there is no response needed) or as a response to any of the
+                    above request types. Correlation between the request and
+                    response are done by sequence number and checksum.
+
+    - Ping          A simple "are you there?" message to maintain a connection.
+       |            If a response fails on this (within a reasonable amount of
+       |            time), it is assumed that the node is down and thus gone
+       |            from the ring.
+      Pong          The response, a simple ACK, with the same code as the one
+                    used in the Ping request to truly indicate that you got it.
+
+    - Quit          A message indicating that the node is gracefully shutting
+       |            down. It's polite to wait for a confirmation, but not
+       |            necessary. You can safely close the socket once you've sent
+       |            this.
+      Ack           A simple ACK message with no fluff, which can be used in
+                    general but used here to affirm a Quit receipt.
+
+TODO: In Cicada, we have a larger variety of messages.
+"""
+
 import sys
 import md5
 import uuid
@@ -12,27 +96,33 @@ class MessageBlob:
     MSG_SUFFIX = 2
 
 class MessageType:
-    MSG_FAIL      = -1
+    """ Describes the various types of messages in the Cicada protocol.
+    """
+    MSG_CH_JOIN     = 0x01
+    MSG_CH_JOINR    = MSG_CH_JOIN    + 1
+    MSG_CH_INFO     = MSG_CH_JOINR   + 1
+    MSG_CH_INFOR    = MSG_CH_INFO    + 1
+    MSG_CH_NOTIFY   = MSG_CH_INFOR   + 1
+    MSG_CH_NOTIFYR  = MSG_CH_NOTIFY  + 1
+    MSG_CH_PING     = MSG_CH_NOTIFYR + 1
+    MSG_CH_PONG     = MSG_CH_PING    + 1
+    MSG_CH_QUIT     = MSG_CH_PONG    + 1
+    MSG_CH_ACK      = MSG_CH_QUIT    + 1
+    MSG_CH_ERROR    = 0xFF
 
-    MSG_JOIN      = 1
-    MSG_JOIN_ACK  = 2
-    MSG_JOIN_FAIL = 3
-
-    MSG_DATA      = 4
-    MSG_DATA_ACK  = 5
-    MSG_DATA_FAIL = 6
-
+    # A simple constant-to-string conversion table for human-readability.
     LOOKUP = {
-        MSG_FAIL:       "FAIL",
-        MSG_JOIN_FAIL:  "FAIL",
-        MSG_DATA_FAIL:  "FAIL",
-
-        MSG_JOIN:       "JOIN",
-        MSG_JOIN_ACK:   "A|JOIN",
-
-        # MSG_QUIT:       "QUIT",
-        MSG_DATA:       "DATA",
-        MSG_DATA_ACK:   "A|DATA",
+        MSG_CH_JOIN:    "JOIN",
+        MSG_CH_JOINR:   "JOIN-RESP",
+        MSG_CH_NOTIFY:  "NOTIFY",
+        MSG_CH_NOTIFYR: "NOTIFY-RESP",
+        MSG_CH_INFO:    "INFO",
+        MSG_CH_INFOR:   "INFO-RESP",
+        MSG_CH_ERROR:   "ERROR",
+        MSG_CH_PING:    "PING",
+        MSG_CH_PONG:    "PONG",
+        MSG_CH_QUIT:    "QUIT",
+        MSG_CH_ACK:     "ACK",
     }
 
 class UnpackException(Exception):
@@ -49,40 +139,36 @@ class CicadaMessage(object):
     This object only provides easy access to header items and packing /
     unpacking of raw bytes.
     """
-    MAX_SIZE = 1024
-    PROTOCOL = "cicada"
-    VERSION  = "\x00\x01"   # 0.1
-    SUFFIX   = "\x47\x4b"   # GK
-    DEBUG = {
-        "H": "ushort",
-        "h": "short",
-        "I": "uint",
-        "i": "int",
-        "(\d+)s": "\\1-byte str",
-        "(\d+)b": "\\1-byte bts",
-    }
+
+    PROTOCOL = "\x63\x68"
+    VERSION  = "\x00\x01"
+    END      = "\x47\x40\x04"
+
     RAW_FORMATS = {
-        MessageBlob.MSG_HEADER: [
-            "6s",   # 6-byte protocol identifier ("cicada")
-            "2s",   # 2-byte version
-            "h",    # 2-byte message type
-            "I",    # 4-byte message length (total)
-            "I",    # 4-byte data length (just the data blob)
+        MessageType.MSG_HEADER: [
+            "2s",   # identifier
+            "2s",   # version
+            "h",    # message type
+            "Q",    # sequence number
+            "I",    # checksum
+            "I",    # payload length, P
+            "B",    # header padding length, Z
+            "%ds",  # Z padding bytes
+            "B",    # quicker message type
         ],
-        MessageType.MSG_DATA: [
-            "%ds",  # LEN-byte data string
+        MessageType.MSG_PAYLOAD: [
+            "%ds",  # P-byte payload string, specific to the message type
         ],
-        MessageBlob.MSG_SUFFIX: [
-            "16s",  # 16-byte MD5 hash of the entire packet (at pack()-time)
-            "2s"    # end-of-message indicator ("GK")
-        ]
+        MessageBlob.MSG_END: [
+            "3s"    # end-of-message
+        ],
     }
     FORMATS  = {
         MessageBlob.MSG_HEADER: ''.join(RAW_FORMATS[MessageBlob.MSG_HEADER]),
         MessageType.MSG_DATA:   ''.join(RAW_FORMATS[MessageType.MSG_DATA]),
-        MessageBlob.MSG_SUFFIX: ''.join(RAW_FORMATS[MessageBlob.MSG_SUFFIX]),
+        MessageBlob.MSG_END:    ''.join(RAW_FORMATS[MessageBlob.MSG_END]),
     }
-    HEADER_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_HEADER])
+    HEADER_LEN = struct.calcsize('!' + (FORMATS[MessageBlob.MSG_HEADER] % 5))
     SUFFIX_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_SUFFIX])
     MIN_MESSAGE_LEN = HEADER_LEN + SUFFIX_LEN
 
@@ -93,6 +179,7 @@ class CicadaMessage(object):
         header and the suffix. The other message objects are responsible for
         packing the data in a specific way.
         """
+
         self.type = msg_type
         self.data = kwargs.get("data", "")
 

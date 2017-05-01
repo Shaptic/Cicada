@@ -52,23 +52,10 @@ class Peer(chordnode.ChordNode):
     perform a remote lookup otherwise. It will also listen to changes from the
     node to update the properties.
 
-    For example, accessing `RemoteChord.successor` may (instantly) return a
-    current value if it has been fetched or updated recently, but otherwise may
-    require actual network communication to fetch it.
+    For example, accessing `Peer.successor` may (instantly) return a current
+    value if it has been fetched or updated recently, but otherwise may require
+    actual network communication to fetch it.
     """
-
-    #
-    # in LocalChordNode::join_ring(address):
-    #   self.joiner.connect(address)
-    #   self.peers.append(RemoteChordNode(self.joiner, address))
-    #
-    # in RemoteChordNode(sock, addr):
-    #   self.peer_sock = sock
-    #   baseline = self.peer_sock.recv(1024)
-    #   self.predecessor = baseline[0]
-    #   self.successor = baseline[1]
-    #   etc...
-    #
 
     def __init__(self, joiner_sock, remote_addr):
         """ Sends a JOIN request to a peer in an existing ring.
@@ -76,8 +63,9 @@ class Peer(chordnode.ChordNode):
         The address is the receiving end of the socket of the `LocalChordNode`
         that we're connecting to.
         """
-        if not isinstance(remote_addr, tuple):
-            raise TypeError("Must join ring via address pair, got %s!" % remote_addr)
+        if not isinstance(remote_addr, tuple) and len(remote_addr) == 2:
+            raise TypeError("Must join ring via address pair, got %s!" % (
+                remote_addr))
 
         self.peer_sock = joiner_sock
         self.remote_addr = remote_addr
@@ -94,15 +82,15 @@ class Peer(chordnode.ChordNode):
         """
 
         # This will be done using a proper protocol soon.
-        print "Waiting on JOIN response..."
+        self.pr("Waiting on JOIN response...")
         self.peer_sock.connect(self.remote_addr)
         self.peer_sock.sendall("JOIN\r\n")
         read_list, _, _ = select.select([ self.peer_sock ], [ ], [ ], 5)
         if read_list:
             resp = read_list[0].recv(1024)
-            print "Joiner got response:", resp
+            self.pr("Joiner got response:", resp)
 
-            if resp.startswith("RJOIN:"):
+            if resp.startswith("JOIN-R:"):
                 # The socket will return the successor node corresponding to
                 # this node. Thus, we create a new Peer node that represents
                 # this successor and return it.
@@ -128,5 +116,30 @@ class Peer(chordnode.ChordNode):
     def fix_fingers(self):
         return
 
-    def notify(self):
-        return
+    def notify(self, local_node):
+        """ Notifies the remote Peer this object represents about the node.
+        """
+        pass
+
+    def __str__(self):
+        return "<Peer | %s>" % super(Peer, self).__str__()
+
+    def get_predecessor(self):
+        # TODO: Set me properly.
+        self._pred_expired = False
+        if self.predecessor is not None or self._pred_expired:
+            return self.predecessor
+
+        self.peer_sock.sendall("INFO")
+        data = self.peer_sock.recv(32)
+        print "INFO response:", data
+        msg = data[len("INFO-R:"):]
+        pred, succ = msg.split('|')
+        print "info data: pred=%s,succ=%s" % (pred, succ)
+
+        pred = pred.split(',')
+        succ = succ.split(',')
+
+        self.predecessor = pred
+        self.successor = succ
+

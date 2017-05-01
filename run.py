@@ -33,6 +33,7 @@ def main():
     print "Root:"
     print root
     print root.fingers
+    print
 
     # We join a single node to the ring.
     try:
