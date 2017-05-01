@@ -30,16 +30,16 @@ The header format is as follows:
 
 For responses and errors, there are additional fields:
 
-    - 8-byte sequence number and
-    - 4-byte checksum of the message we're responding to.
+  - 8-byte sequence number *and*
+  - 4-byte checksum of the message we're responding to.
 
 ### Header Padding ###
 
 The message content, then, is just a `P`-byte payload followed by a 2-byte
-message terminator, `0x474b04` (`GK[end-of-transmission byte]`).
+message terminator, `0x474b04` (`GK[EoT byte]`).
 
 In total, including padding, the minimum message size is:
-    2 + 2 + 2 + 8 + 4 + 4 + 1 + 1 + 5 [`0x00` pad] + 3 = 32 bytes.
+    2 + 2 + 2 + 8 + 4 + 4 + 1 + 1 + 5 [`0x00` pad] + 3 = **32 bytes**.
 
 Each message is either a request or a response. The response type constant is +1
 to the request type for easy correlation.
