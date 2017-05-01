@@ -57,12 +57,14 @@ In Chord, we are concerned with the following message pairs:
   - **Notify**      After joining, a fresh node will notify other nodes about
                     its existence, in order to allow those nodes to update their
                     predecessors to point to this fresh node if need be.
+
     **NotifyResp**  An indication of whether or not the node has become this
                     node's new predecessor. If it has, the original node may set
                     it as its successor to create the optimal ring.
 
   - **Info**        This is a request to another node for all of its internal
                     state.
+
     **InfoResp**    This is an info update representing a node in its entirety
                     to another. This includes the predecessor and successor
                     addresses and its local finger table.
@@ -76,6 +78,7 @@ In Chord, we are concerned with the following message pairs:
                     If a response fails on this (within a reasonable amount of
                     time), it is assumed that the node is down and thus gone
                     from the ring.
+
     **Pong**        The response, a simple ACK, with the same code as the one
                     used in the Ping request to truly indicate that you got it.
 
@@ -83,6 +86,7 @@ In Chord, we are concerned with the following message pairs:
                     down. It's polite to wait for a confirmation, but not
                     necessary. You can safely close the socket once you've sent
                     this.
+
     **Ack**         A simple ACK message with no fluff, which can be used in
                     general but used here to affirm a Quit receipt.
 
