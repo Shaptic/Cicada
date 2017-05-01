@@ -1,7 +1,10 @@
 #!/usr/bin/env python2
+import time
+
+from chord import localnode
 from chord import chord
 
-def main():
+def main(host_address, join_address=None):
     """ Executes a normal Chord workflow.
 
     A single Chord node is chosen as the root of the ring. All other peers will
@@ -22,6 +25,23 @@ def main():
     At this point, B will communicate and receive updates from B via its peer
     socket, and vice-versa.
     """
+
+    print "main(%s, %s)" % (host_address, join_address)
+    root = localnode.LocalChordNode("%s:%d" % host_address,
+                                    bind_addr=host_address)
+
+    if join_address is not None:
+        root.join_ring(join_address)
+
+    while True:
+        time.sleep(15)
+        print "root node:", root
+        print "root fing:", root.fingers
+        if join_address is not None:
+            print "join node:", root.peers
+            print "join fing:", root.peers[0].fingers
+
+    return
 
     # Establish a list of independent nodes.
     ring = chord.main()
@@ -59,17 +79,27 @@ def main():
         return ring
 
 if __name__ == "__main__":
+    import sys
+    client = None
+    ip, port = sys.argv[1], sys.argv[2]
+    if len(sys.argv) > 3:
+        client = (sys.argv[3], int(sys.argv[4]))
+
+    ring = main((ip, int(port)), client)
+
     ring = main()
-    print "Shutting down background stabilizer threads."
-    for node in ring:
-        node.stable.stop_running()
-        node.dispatcher.stop_running()
-        node.listen_thread.stop_running()
+    # time.sleep(120)
 
-    for i, node in enumerate(ring):
-        node.stable.join(500)
-        node.dispatcher.join(500)
-        node.listen_thread.join(500)
-        print "Shut down %d/%d...\r" % (i + 1, len(ring)),
+    # print "Shutting down background stabilizer threads."
+    # for node in ring:
+    #     node.stable.stop_running()
+    #     node.dispatcher.stop_running()
+    #     node.listen_thread.stop_running()
 
-    print
+    # for i, node in enumerate(ring):
+    #     node.stable.join(500)
+    #     node.dispatcher.join(500)
+    #     node.listen_thread.join(500)
+    #     print "Shut down %d/%d...\r" % (i + 1, len(ring)),
+
+    # print

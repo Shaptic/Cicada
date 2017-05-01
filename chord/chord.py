@@ -35,22 +35,22 @@ def print_ring(root):
     for node in walk_ring(root):
         print node
 
-def main():
-    # Create a "virtual" Chord ring, in the sense that all of these "remote"
-    # addresses are still on the local machine, but are independent of each
-    # other.
-    #
-    # They are still unconnected.
-    print "main()"
-    address_ring = [
-        ("192.168.0.104", 4000 + i) for i in xrange(3)
-    ]
+# def main():
+#     # Create a "virtual" Chord ring, in the sense that all of these "remote"
+#     # addresses are still on the local machine, but are independent of each
+#     # other.
+#     #
+#     # They are still unconnected.
+#     print "main()"
+#     address_ring = [
+#         ("192.168.0.104", 4000 + i) for i in xrange(3)
+#     ]
 
-    # Transform these address pairs into real Chord nodes and their respective
-    # listener sockets.
-    nodes = sorted([
-        localnode.LocalChordNode("%s:%d" % _, bind_addr=_) \
-            for _ in address_ring
-    ], key=lambda x: x.hash)
+#     # Transform these address pairs into real Chord nodes and their respective
+#     # listener sockets.
+#     nodes = sorted([
+#         localnode.LocalChordNode("%s:%d" % _, bind_addr=_) \
+#             for _ in address_ring
+#     ], key=lambda x: x.hash)
 
-    return nodes
+#     return nodes

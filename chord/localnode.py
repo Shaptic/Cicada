@@ -12,6 +12,106 @@ from . import chordnode
 from . import peer
 
 
+class BaseMessage(object):
+    def __init__(self, response_handler=lambda x: None,
+                       request_handler=lambda x: None):
+        self.handlers = (request_handler, response_handler)
+        self.msg_type = ""
+        pass
+
+    @classmethod
+    def parse(cls, bytestream):
+        msg = cls()
+        if not msg.parse_request(bytestream):
+            if not msg.parse_response(bytestream):
+                return False
+        return msg
+
+    @property
+    def handler(self):
+        assert self.msg_type, "No handler for an unparsed message."
+        return self.handlers[0] if self.msg_type == "REQUEST" \
+                                else self.handlers[1]
+
+
+class InfoMessage(BaseMessage):
+    """ Handles all processing of an INFO message.
+
+    An INFO request from a `Peer` N contains nothing but the command.
+
+    An INFO response back _to_ `Peer` N _from_ `LocalChordNode` X contains the
+    following data:
+        - X's hash value.
+        - A 2-tuple address of X's predecessor.
+        - A 2-tuple address of X's successor.
+
+    This object allows you to do the following operations:
+        - Build an INFO request from scratch.
+        - Parse an INFO request from a bytestream.
+        - Call a particular handler on a successful parsing.
+    """
+    def parse_request(self, bytestream):
+        if bytestream.startswith("INFO\r\n"):
+            self.msg_type = "REQUEST"
+            return self.handlers[0](self, bytestream)
+
+        return False
+
+    def parse_response(self, bytestream):
+        if not bytestream.startswith("INFO-R:") or \
+           not bytestream.endswith("\r\n"):
+            return False
+
+        b = bytestream[len("INFO-R:") - 1 : -2]
+        parts = b.split('|')
+        self.node_hash = int(parts[0])
+        self.pred_addr = parts[1].split(':')
+        self.pred_addr[1] = int(self.pred_addr[1])
+        self.succ_addr = parts[2].split(':')
+        self.succ_addr[1] = int(self.succ_addr[1])
+
+        self.msg_type = "RESPONSE"
+        return self.handler(self, bytestream)
+
+    def build_request(self):
+        return "INFO\r\n"
+
+    def build_response(self, node_hash, predecessor_addr, successor_addr):
+        return "INFO-R:%d|%s:%d|%s:%d\r\n" % (node_hash,
+            predecessor_addr[0], predecessor_addr[1],
+            successor_addr[0], successor_addr[1])
+
+
+class JoinMessage(BaseMessage):
+    def parse_request(self, bytestream):
+        if bytestream.startswith("JOIN\r\n"):
+            self.msg_type = "REQUEST"
+            return self.handlers[0](self, bytestream)
+
+        return False
+
+    def parse_response(self, bytestream):
+        if not bytestream.startswith("JOIN-R:") or \
+           not bytestream.endswith("\r\n"):
+            return False
+
+        b = bytestream[len("JOIN-R:") - 1 : -2]
+        if b == "NONE":
+            self.succ_addr = "NONE"
+        else:
+            self.succ_addr = b.split(',')
+
+        self.msg_type = "RESPONSE"
+        return self.handler(self, bytestream)
+
+    def build_request(self):
+        return "JOIN\r\n"
+
+    def build_response(self, succ_addr):
+        return "JOIN-R:%s" % ("NONE" if succ_addr is None else (
+            "%s,%d" % succ_addr))
+
+
 class DispatchThread(communication.InfiniteThread):
     """ Processes incoming messages from a list of sockets.
     """
@@ -71,7 +171,7 @@ class LocalChordNode(chordnode.ChordNode):
         self.listener.bind(self.local_addr)
         self.listener.listen(5)
 
-        print "Starting listener thread for", self.listener
+        print "Starting listener thread for", self.listener.getsockname()
         self.listen_thread = communication.ListenerThread(self, self.listener)
         self.listen_thread.start()
 
@@ -172,13 +272,7 @@ class LocalChordNode(chordnode.ChordNode):
         if self.successor is None:  # nothing to stabilize, yet
             return
 
-        # print "stabilizing"
-        # print self
-        # print self.predecessor
-        # print self.successor
-        # print self.successor.predecessor
-        # print self.fingers
-
+        import pdb; pdb.set_trace()
         x = self.successor.get_predecessor()
 
         # If our successor doesn't *have* a predecessor, tell them about us, at
@@ -208,39 +302,42 @@ class LocalChordNode(chordnode.ChordNode):
         thumb.node = self.fingers.findSuccessor(thumb.start)
         # self.pr("fix_fingers: fingers are now\n%s" % self.fingers)
 
-    def notify(self, node):
-        """ Determine whether or not a node should be our predecessor.
-        """
-        self.pr("notify: trying", node)
-        if self.predecessor is None or \
-           hashring.Interval(self.predecessor.hash, self.hash).within(node):
-            self.predecessor = node
-
-        assert self.predecessor != self, "notify: set self as predecessor!"
-
     def process(self, peer, message):
-        print "Peer %s received message %s" % (peer.remote_addr, message)
+        print "Peer %s received message %s" % (peer.remote_addr, repr(message))
 
-        # Respond to a JOIN request with an RJOIN containing our successor's
-        # address info.
-        if message == "JOIN":
-            msg = "JOIN-R:"
-            if self.successor is not None:
-                msg += ','.join(self.successor.remote_addr)
-            else:
-                msg += "NONE"
-            self.on_node_joined(peer, msg)
+        handlers = [
+            InfoMessage(
+                request_handler=lambda msg, b: self.on_info_request(peer, msg),
+            ),
+            JoinMessage(
+                request_handler=lambda msg, b: self.on_node_joined(peer, msg)
+            ),
+        ]
+
+        for handler in handlers:
+            if handler.parse_request(message) or \
+               handler.parse_response(message):
+                break
+
+        return
+
+        if message == "NOTIFY":
+            msg = "NOTIFY-R"
+            self.on_notify(peer, message)
+            msg += "%s:%d" % self.predecessor.remote_addr
             peer.peer_sock.sendall(msg)
 
-        elif message == "INFO":
-            msg = "INFO-R:"
-            msg += ("%s:%d" % self.successor.remote_addr) + '|'
-            if self.predecessor is None:
-                msg += ("%s:%d" % self.listener.getsockname())
-            else:
-                msg += ','.join(self.predecessor.remote_addr)
-            # self.on_info_request(peer, msg)
-            peer.peer_sock.sendall(msg)
+    def on_info_request(self, peer_object, message):
+        if self.predecessor is None:
+            pred_addr = self.listener.getsockname()
+        else:
+            pred_addr = self.predecessor.remote_addr
+
+        msg = InfoMessage().build_response(self.hash,
+            self.successor.remote_addr, pred_addr)
+
+        self.pr("Responding to INFO with %s" % repr(msg))
+        peer_object.peer_sock.sendall(msg)
 
     def on_node_joined(self, peer_object, message):
         """ Receives a JOIN message from a node previously outside the ring.
@@ -270,3 +367,14 @@ class LocalChordNode(chordnode.ChordNode):
            hashring.Interval(
                 self.predecessor.hash, self.hash).within(peer_object.hash):
             self.predecessor = peer_object
+
+    def on_notify(self, node, message):
+        """ Determine whether or not a node should be our predecessor.
+        """
+        self.pr("notify: trying", node)
+        if self.predecessor is None or \
+           hashring.Interval(self.predecessor.hash, self.hash).within(node):
+            self.predecessor = node
+
+        assert self.predecessor != self, "notify: set self as predecessor!"
+

@@ -112,10 +112,9 @@ class Peer(chordnode.ChordNode):
         return
 
     def notify(self, local_node):
-        """ Notifies the remote Peer this object represents about the node.
+        """ The given `local_node` is notifying this peer of its existence.
         """
-
-        self.peer_sock.sendall("NOTIFY")
+        self.peer_sock.sendall("NOTIFY\r\n")
         data = self.peer_sock.recv(64)
 
     def __str__(self):
@@ -127,16 +126,16 @@ class Peer(chordnode.ChordNode):
         if self.predecessor is not None or self._pred_expired:
             return self.predecessor
 
-        self.peer_sock.sendall("INFO")
+        # import pdb; pdb.set_trace()
+        self.peer_sock.sendall("INFO\r\n")
         data = self.peer_sock.recv(64)
-        print "INFO response:", data
+        self.pr("INFO response: %s" % repr(data))
+
         msg = data[len("INFO-R:"):]
         pred, succ = msg.split('|')
-        print "info data: pred=%s,succ=%s" % (pred, succ)
+        self.pr("info data: hash=%s,pred=%s,succ=%s" % (repr(pred), repr(succ)))
 
         pred = pred.split(',')
         succ = succ.split(',')
 
-        self.predecessor = pred
-        self.successor = succ
-
+        return pred
