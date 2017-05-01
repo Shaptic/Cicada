@@ -9,12 +9,14 @@ import random
 import string
 import threading
 
-import hashring
-import localnode
-from utils   import *
+from . import hashring
+from . import localnode
+from . import utils
+
 
 if __name__ == "__main__" and __package__ is None:
     __package__ = "cicada.chord"
+
 
 def walk_ring(root, maxcount=10):
     count = 0

@@ -179,7 +179,7 @@ class LocalChordNode(chordnode.ChordNode):
         # print self.successor.predecessor
         # print self.fingers
 
-        x = self.successor.predecessor
+        x = self.successor.get_predecessor()
 
         # If our successor doesn't *have* a predecessor, tell them about us, at
         # least! That way, the ring is linked.

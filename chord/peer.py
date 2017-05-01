@@ -29,14 +29,9 @@ a direct communication line to another LocalNode.Peers[index_2] socket instance
 that exists elsewhere.
 """
 
-# Simulation:
-#   chord_addr = ('192.168.0.101', 2016)
-#   local_peer = LocalChordNode(host_addr)
-#   local_peer.joiner.connect(chord_addr)
-#   chord_succcesor = local_peer.joiner.recv(1024)
-
 import select
 from . import chordnode
+
 
 def parse_successor(data):
     index = data.find("NONE")
@@ -119,7 +114,9 @@ class Peer(chordnode.ChordNode):
     def notify(self, local_node):
         """ Notifies the remote Peer this object represents about the node.
         """
-        pass
+
+        self.peer_sock.sendall("NOTIFY")
+        data = self.peer_sock.recv(64)
 
     def __str__(self):
         return "<Peer | %s>" % super(Peer, self).__str__()
@@ -131,7 +128,7 @@ class Peer(chordnode.ChordNode):
             return self.predecessor
 
         self.peer_sock.sendall("INFO")
-        data = self.peer_sock.recv(32)
+        data = self.peer_sock.recv(64)
         print "INFO response:", data
         msg = data[len("INFO-R:"):]
         pred, succ = msg.split('|')
