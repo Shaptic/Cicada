@@ -4,105 +4,54 @@ import select
 import random
 import time
 
-from . import hashring
 from . import utils
+from . import hashring
+
+from . import communication
 from . import chordnode
 from . import peer
 
-class ListenerThread(threading.Thread):
-    def __init__(self, parent, sock):
-        super(ListenerThread, self).__init__()
-        self.parent = parent
-        self.listener = sock
-        self.running = True
-        self.ready = False
 
-    def run(self):
-        while self.running:
-            rd, wr, er = select.select([ self.listener ], [], [ self.listener ], 1)
-            if rd:
-                client, addr = self.listener.accept()
-                print "Accepted", client, "from", addr
-                self.parent.dispatcher.add_peer(peer.Peer(client, addr))
-                self.ready = True
-
-            elif er:
-                print "An error occurred in the socket."
-                self.running = False
-                break
-
-class protocol:
-    MESSAGE_END = "\r\n"
-
-class ReadQueue(object):
-    def __init__(self):
-        self.queue = []
-        self.pending = ""
-        self.done = False
-
-    def read(self, sock):
-        data = sock.recv(512)
-        # import pdb; pdb.set_trace()
-        if not data:
-            self.done = True
-            return False
-
-        self.pending += data
-        index = self.pending.find(protocol.MESSAGE_END)
-        if index != -1:
-            self.queue.append(self.pending[:index])
-            self.pending = self.pending[index + len(protocol.MESSAGE_END):]
-        return True
-
-    @property
-    def ready(self):
-        return len(self.queue) > 0
-
-    def pop(self):
-        result = self.queue.pop(0)
-        return result
-
-class DispatchThread(threading.Thread):
+class DispatchThread(communication.InfiniteThread):
     """ Processes incoming messages from a list of sockets.
     """
     def __init__(self, parent):
         super(DispatchThread, self).__init__()
-        self.read_queue = ReadQueue()
+        self.read_queue = communication.ReadQueue()
         self.handler = parent
-        self.running = True
         self.peers = { }    # dict -> { socket: (Peer, ReadQueue) }
 
-    def add_peer(self, peer_obj):
-        self.peers[peer_obj.peer_sock] = (peer_obj, ReadQueue())
+    def add_peer(self, client_socket, client_address):
+        peer_obj = peer.Peer(client_socket, client_address)
+        self.peers[peer_obj.peer_sock] = (peer_obj, communication.ReadQueue())
 
-    def run(self):
-        while self.running:
-            if not self.peers:
+    def _loop_method(self):
+        if not self.peers:
+            return
+
+        # Only try reading from the open peers. The list will be properly
+        # filtered later (TODO).
+        useable = [
+            pair[0].peer_sock for pair in filter(
+                lambda x: not x[0].complete, self.peers.values())
+        ]
+        rd, wr, er = select.select(useable, [ ], useable, 1)
+
+        for sock in rd:
+            peer, queue = self.peers[sock]
+            if not queue.read(sock):
+                print "Socket for %s closes." % peer.remote_addr
+                peer.complete = True
                 continue
 
-            # Only try reading from the open peers. The list will be properly
-            # filtered later (TODO).
-            useable = [
-                pair[0].peer_sock for pair in filter(
-                    lambda x: not x[0].complete, self.peers.values())
-            ]
-            rd, wr, er = select.select(useable, [ ], useable, 1)
+            while queue.ready:
+                msg = queue.pop()
+                self.handler.process(peer, msg)
 
-            for sock in rd:
-                peer, queue = self.peers[sock]
-                if not queue.read(sock):
-                    print "Socket for %s closes." % peer.remote_addr
-                    peer.complete = True
-                    continue
+        if er:
+            print "An error occurred in the socket."
+            self.stop_running()
 
-                while queue.ready:
-                    msg = queue.pop()
-                    self.handler.process(peer, msg)
-
-            if er:
-                print "An error occurred in the socket."
-                self.running = False
-                break
 
 class LocalChordNode(chordnode.ChordNode):
     """ Represents the current local node in the Chord hash ring.
@@ -110,6 +59,7 @@ class LocalChordNode(chordnode.ChordNode):
     Specifically, this means the node exists *on this machine* and that no
     remote lookups or network communication is necessary.
     """
+
     def __init__(self, data, bind_addr=('localhost', 2017)):
         print "__init__(%s, %s)" % (data, bind_addr)
 
@@ -122,7 +72,7 @@ class LocalChordNode(chordnode.ChordNode):
         self.listener.listen(5)
 
         print "Starting listener thread for", self.listener
-        self.listen_thread = ListenerThread(self, self.listener)
+        self.listen_thread = communication.ListenerThread(self, self.listener)
         self.listen_thread.start()
 
         # This thread is responsible for handling the messages from all of the
@@ -138,9 +88,6 @@ class LocalChordNode(chordnode.ChordNode):
         # These are all of the known direct neighbors in the Chord ring.
         self.peers = [ ]
 
-        # This is for processing async IO operations.
-        self.threads = [ ]
-
         super(LocalChordNode, self).__init__(data)
 
     @utils.listify
@@ -150,7 +97,8 @@ class LocalChordNode(chordnode.ChordNode):
         This means proper ordering in the finger table with respect to the
         node's hash value.
         """
-        self.pr("add_node:", str(self), str(node))
+        self.pr("add_node::self", str(self))
+        self.pr("add_node::node", str(node))
         assert isinstance(node, chordnode.ChordNode), \
                "add_node: not a ChordNode object!"
 
@@ -195,6 +143,7 @@ class LocalChordNode(chordnode.ChordNode):
 
         self.predecessor = None
 
+        #
         # Create a Peer object that represents the external node that we are
         # using to join the ring. After this JOIN request has been processed
         # (that is, the RJOIN response has been received), the joiner socket is
@@ -202,6 +151,7 @@ class LocalChordNode(chordnode.ChordNode):
         #
         # After this, the peer list contains, additionally, the successor of us
         # as well as the peer we used to join the ring.
+        #
         p = peer.Peer(self.joiner, homie)
         succ = p.join_ring()
         self.add_node(succ)
@@ -275,15 +225,15 @@ class LocalChordNode(chordnode.ChordNode):
         if thumb.node is None:
             return
 
-        # self.pr("fixFingers: fixing finger(%d)" % index)
-        # self.pr("fixFingers: fingers are\n%s" % self.fingers)
+        # self.pr("fix_fingers: fixing finger(%d)" % index)
+        # self.pr("fix_fingers: fingers are\n%s" % self.fingers)
         thumb.node = self.fingers.findSuccessor(thumb.start)
-        # self.pr("fixFingers: fingers are now\n%s" % self.fingers)
+        # self.pr("fix_fingers: fingers are now\n%s" % self.fingers)
 
     def notify(self, node):
         """ Determine whether or not a node should be our predecessor.
         """
-        # self.pr("notify: trying", node)
+        self.pr("notify: trying", node)
         if self.predecessor is None or \
            hashring.Interval(self.predecessor.hash, self.hash).isWithin(node):
             self.predecessor = node

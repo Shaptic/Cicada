@@ -61,9 +61,9 @@ if __name__ == "__main__":
     ring = main()
     print "Shutting down background stabilizer threads."
     for node in ring:
-        node.stable.running = False
-        node.dispatcher.running = False
-        node.listen_thread.running = False
+        node.stable.stop_running()
+        node.dispatcher.stop_running()
+        node.listen_thread.stop_running()
 
     for i, node in enumerate(ring):
         node.stable.join(500)

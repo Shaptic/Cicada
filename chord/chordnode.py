@@ -3,23 +3,24 @@ import socket
 import random
 import time
 
+from . import communication
 from . import hashring
 from . import utils
 
-class Stabilizer(threading.Thread):
+
+class Stabilizer(communication.InfiniteThread):
     """ Performs the Chord stabilization algorithm on a particular node. """
     def __init__(self, node):
         super(Stabilizer, self).__init__()
         self.node = node
-        self.running = True
 
-    def run(self):
-        while self.running:
-            # print "'THREAD: Stabilizing for:'"
-            # print "'THREAD:", self.node, "'"
-            self.node.stabilize()
-            self.node.fix_fingers()
-            time.sleep(random.randint(3, 8))
+    def _loop_method(self):
+        # print "'THREAD: Stabilizing for:'"
+        # print "'THREAD:", self.node, "'"
+        self.node.stabilize()
+        self.node.fix_fingers()
+        time.sleep(random.randint(3, 8))
+
 
 class ChordNode(object):
     """ Represents any Chord node.
@@ -42,11 +43,11 @@ class ChordNode(object):
         self.stable = Stabilizer(self)
         self.stable.start()
 
-    def joinRing(self, homie):
+    def join_ring(self, homie):
         """ Joins a Chord ring via a node in the ring. """
         raise NotImplementedError
 
-    def nodeJoined(self, node):
+    def node_joined(self, node):
         """ Receives a join from a node outside of the ring. """
         raise NotImplementedError
 

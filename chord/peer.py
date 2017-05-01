@@ -103,13 +103,13 @@ class Peer(chordnode.ChordNode):
             print "Joiner got response:", resp
 
             if resp.startswith("RJOIN:"):
-                # The socket will return the successor node corresponding to this
-                # node. Thus, we create a new Peer node that represents this
-                # successor and return it.
+                # The socket will return the successor node corresponding to
+                # this node. Thus, we create a new Peer node that represents
+                # this successor and return it.
                 #
-                # The peer is represented just by a remote address, which we parse.
-                # If it doesn't exist, we just use the address we used to connect
-                # to the ring, instead.
+                # The peer is represented just by a remote address, which we
+                # parse. If it doesn't exist, we just use the address we used to
+                # connect to the ring, instead.
                 addr = parse_successor(resp)
                 if addr == "NONE":  # our homie is the only node!
                     addr = self.remote_addr
@@ -123,4 +123,10 @@ class Peer(chordnode.ChordNode):
             raise ValueError("Timed out waiting for listener response!")
 
     def stabilize(self):
+        return
+
+    def fix_fingers(self):
+        return
+
+    def notify(self):
         return
