@@ -79,6 +79,7 @@ class AcceptThread(threading.Thread):
         self.chan = chan
         self.sock = chan.serve
         self.trigger = chan.new_user
+        self.setDaemon(True)
 
     def run(self):
         client, addr = self.sock.accept()

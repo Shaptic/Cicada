@@ -86,20 +86,18 @@ if __name__ == "__main__":
         client = (sys.argv[3], int(sys.argv[4]))
 
     ring = main((ip, int(port)), client)
+    time.sleep(60)
 
-    ring = main()
-    # time.sleep(120)
+    print "Shutting down background stabilizer threads."
+    for node in ring:
+        node.stable.stop_running()
+        node.dispatcher.stop_running()
+        node.listen_thread.stop_running()
 
-    # print "Shutting down background stabilizer threads."
-    # for node in ring:
-    #     node.stable.stop_running()
-    #     node.dispatcher.stop_running()
-    #     node.listen_thread.stop_running()
-
-    # for i, node in enumerate(ring):
-    #     node.stable.join(500)
-    #     node.dispatcher.join(500)
-    #     node.listen_thread.join(500)
-    #     print "Shut down %d/%d...\r" % (i + 1, len(ring)),
+    for i, node in enumerate(ring):
+        node.stable.join(5)
+        node.dispatcher.join(5)
+        node.listen_thread.join(5)
+        print "Shut down %d/%d...\r" % (i + 1, len(ring)),
 
     # print

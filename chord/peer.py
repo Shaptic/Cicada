@@ -30,7 +30,11 @@ that exists elsewhere.
 """
 
 import select
+import socket
+import communication
+
 from . import chordnode
+from .message import *
 
 
 def parse_successor(data):
@@ -38,6 +42,7 @@ def parse_successor(data):
     if index == -1:
         return data.split(',')
     return "NONE"
+
 
 class Peer(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
@@ -52,19 +57,29 @@ class Peer(chordnode.ChordNode):
     actual network communication to fetch it.
     """
 
-    def __init__(self, joiner_sock, remote_addr):
-        """ Sends a JOIN request to a peer in an existing ring.
+    def __init__(self, remote_addr, existing_socket=None):
+        """ Establishes a connection to a remote node.
 
         The address is the receiving end of the socket of the `LocalChordNode`
         that we're connecting to.
+
+        If `existing_socket` exists, there is no connection initiated.
         """
         if not isinstance(remote_addr, tuple) and len(remote_addr) == 2:
             raise TypeError("Must join ring via address pair, got %s!" % (
                 remote_addr))
 
-        self.peer_sock = joiner_sock
-        self.remote_addr = remote_addr
+        if existing_socket:
+            s = existing_socket
+        else:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(remote_addr)
+
         self.complete = False   # set when the socket closes
+        self.remote_addr = remote_addr
+        import pdb; pdb.set_trace()
+        self.processor = communication.SocketProcessor(s, self.responder)
+        self.processor.start()
 
         super(Peer, self).__init__("%s:%d" % remote_addr)
 
@@ -78,32 +93,32 @@ class Peer(chordnode.ChordNode):
 
         # This will be done using a proper protocol soon.
         self.pr("Waiting on JOIN response...")
-        self.peer_sock.connect(self.remote_addr)
-        self.peer_sock.sendall("JOIN\r\n")
-        read_list, _, _ = select.select([ self.peer_sock ], [ ], [ ], 5)
-        if read_list:
-            resp = read_list[0].recv(1024)
-            self.pr("Joiner got response:", resp)
+        communication.SocketProcessor.request(self.processor,
+            JoinMessage().build_request(), 10, self.responder)
 
-            if resp.startswith("JOIN-R:"):
-                # The socket will return the successor node corresponding to
-                # this node. Thus, we create a new Peer node that represents
-                # this successor and return it.
-                #
-                # The peer is represented just by a remote address, which we
-                # parse. If it doesn't exist, we just use the address we used to
-                # connect to the ring, instead.
-                addr = parse_successor(resp)
-                if addr == "NONE":  # our homie is the only node!
-                    addr = self.remote_addr
+    def responder(self, response):
+        if response.build_request() != "JOIN\r\n":
+            print "wrong request type. sent"
+            print response.sent_message
+            print "got"
+            print response.recv_message
+            raise ValueError("Invalid format! %s" % repr(response.__dict__))
 
-                print "connected peer is at", addr
-                return Peer(self.peer_sock, addr)
+        # The socket will return the successor node corresponding to
+        # this node. Thus, we create a new Peer node that represents
+        # this successor and return it.
+        #
+        # The peer is represented just by a remote address, which we
+        # parse. If it doesn't exist, we just use the address we used to
+        # connect to the ring, instead.
+        self.pr("Joiner got response:", response.recv_message)
+        join_response = JoinMessage().parse_response(response.recv_message)
+        if join_response.succ_addr:     # our homie is the only node!
+            addr = self.remote_addr
 
-            raise ValueError("Invalid format! %s" % repr(resp))
-
-        else:
-            raise ValueError("Timed out waiting for listener response!")
+        # Join the successor.
+        print "connected peer is at", join_response.succ_addr
+        return Peer(join_response.succ_addr)
 
     def stabilize(self):
         return

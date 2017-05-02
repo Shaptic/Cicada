@@ -26,3 +26,22 @@ def listify(fn):
         else:
             return fn(self, single_arg, *args, **kwargs)
     return wrapper
+
+def find_last(string, char, start=0):
+    """
+    >>> tester = "stuff,again,more,things"
+    >>> find_last(tester, ',')
+    17
+    >>> find_last(tester, 'f')
+    4
+    >>> find_last(tester, 'f', 8)
+    -1
+    """
+    string = string[start:]
+    index = -1
+    while True:
+        tmp = string.find("|", start)
+        if tmp == -1: break
+        start = index = tmp + 1
+
+    return index
