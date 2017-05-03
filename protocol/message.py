@@ -8,16 +8,17 @@ import struct
 
 import channel
 from   errors import ExceptionType
+from   chord import utils
 
 class MessageBlob:
-    MSG_HEADER = 0
-    MSG_DATA   = 1
-    MSG_SUFFIX = 2
+    MSG_HEADER  = 0
+    MSG_PAYLOAD = 1
+    MSG_END     = 2
 
 class MessageType:
     """ Describes the various types of messages in the Cicada protocol.
     """
-    MSG_CH_JOIN     = 0x01
+    MSG_CH_JOIN     = 0x0001
     MSG_CH_JOINR    = MSG_CH_JOIN    + 1
     MSG_CH_INFO     = MSG_CH_JOINR   + 1
     MSG_CH_INFOR    = MSG_CH_INFO    + 1
@@ -27,7 +28,10 @@ class MessageType:
     MSG_CH_PONG     = MSG_CH_PING    + 1
     MSG_CH_QUIT     = MSG_CH_PONG    + 1
     MSG_CH_ACK      = MSG_CH_QUIT    + 1
-    MSG_CH_ERROR    = 0xFF
+    MSG_CH_ERROR    = 0x00FF
+    MSG_CH_MAX      = 0x00FF                # last Chord-type message
+
+    MSG_CI_JOIN     = 0xFF00                # first Cicada-type message
 
     # A simple constant-to-string conversion table for human-readability.
     LOOKUP = {
@@ -44,6 +48,11 @@ class MessageType:
         MSG_CH_ACK:     "ACK",
     }
 
+class QuickType:
+    ERROR    = 0x01
+    REQUEST  = 0x02
+    RESPONSE = 0x04
+
 class UnpackException(Exception):
     """ Represents an exception that occurs when decoding a packet.
     """
@@ -51,7 +60,7 @@ class UnpackException(Exception):
         super(UnpackException, self).__init__(
             EXCEPTION_STRINGS[exc_type] % args)
 
-class CicadaMessage(object):
+class MessageContainer(object):
     """ An abstraction of a raw packet in the Cicada protocol.
 
     Underlying message types (such as a JOIN message) are stored as raw data.
@@ -59,37 +68,56 @@ class CicadaMessage(object):
     unpacking of raw bytes.
     """
 
-    PROTOCOL = "\x63\x68"
-    VERSION  = "\x00\x01"
-    END      = "\x47\x40\x04"
+    CHORD_PR  = "\x63\x68"      # ch
+    CICADA_PR = "\x63\x69"      # ci
+    VERSION   = "\x00\x01"      # v0.1
+    END       = "\x47\x4b\x04"  # GK[EoT]
 
     RAW_FORMATS = {
-        MessageType.MSG_HEADER: [
-            "2s",   # identifier
+        MessageBlob.MSG_HEADER: [
+            "2s",   # protocol identifier
             "2s",   # version
             "h",    # message type
-            "Q",    # sequence number
-            "I",    # checksum
+            "I",    # sequence number
+            "16s",  # checksum
             "I",    # payload length, P
-            "B",    # header padding length, Z
-            "%ds",  # Z padding bytes
             "B",    # quicker message type
         ],
-        MessageType.MSG_PAYLOAD: [
+        MessageBlob.MSG_PAYLOAD: [
             "%ds",  # P-byte payload string, specific to the message type
         ],
         MessageBlob.MSG_END: [
+            "B",    # byte-aligned padding length, Z
+            "%ds",  # Z padding bytes
             "3s"    # end-of-message
         ],
     }
     FORMATS  = {
-        MessageBlob.MSG_HEADER: ''.join(RAW_FORMATS[MessageBlob.MSG_HEADER]),
-        MessageType.MSG_DATA:   ''.join(RAW_FORMATS[MessageType.MSG_DATA]),
-        MessageBlob.MSG_END:    ''.join(RAW_FORMATS[MessageBlob.MSG_END]),
+        MessageBlob.MSG_HEADER:  ''.join(RAW_FORMATS[MessageBlob.MSG_HEADER]),
+        MessageBlob.MSG_PAYLOAD: ''.join(RAW_FORMATS[MessageBlob.MSG_PAYLOAD]),
+        MessageBlob.MSG_END:     ''.join(RAW_FORMATS[MessageBlob.MSG_END]),
     }
-    HEADER_LEN = struct.calcsize('!' + (FORMATS[MessageBlob.MSG_HEADER] % 5))
-    SUFFIX_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_SUFFIX])
-    MIN_MESSAGE_LEN = HEADER_LEN + SUFFIX_LEN
+    DEBUG = {
+        "B": "ubyte",
+        "H": "ushort",
+        "h": "short",
+        "Q": "ulong",
+        "I": "uint",
+        "i": "int",
+        "(\d+)s": "\\1-byte str",
+        "(\d+)b": "\\1-byte bts",
+    }
+    HEADER_LEN = struct.calcsize('!' + (FORMATS[MessageBlob.MSG_HEADER]))
+    SUFFIX_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END] % 0)
+    MIN_MESSAGE_LEN = utils.nextmul(HEADER_LEN + SUFFIX_LEN, 8)
+
+    @staticmethod
+    def quick_type(msg_type):
+        if msg_type == MessageType.MSG_CH_ERROR:
+            return QuickType.ERROR
+        elif msg_type % 2 == 0:
+            return QuickType.REQUEST
+        return QuickType.RESPONSE
 
     def __init__(self, msg_type, **kwargs):
         """ Prepares a packet.
@@ -98,42 +126,62 @@ class CicadaMessage(object):
         header and the suffix. The other message objects are responsible for
         packing the data in a specific way.
         """
-
         self.type = msg_type
         self.data = kwargs.get("data", "")
 
     def pack(self):
         """ Packs the packet into a binary format for transfer.
         """
-        header = struct.pack('!' + self.FORMATS[MessageBlob.MSG_HEADER],
-            self.PROTOCOL,
+        header = struct.pack(
+            '!' + self.FORMATS[MessageBlob.MSG_HEADER],
+            self.protocol,
             self.VERSION,
             self.type,
-            self.length,
-            len(self.data))
+            0xFFFFFFFF,
+            '\x00' * 16,
+            len(self.data),
+            MessageContainer.quick_type(self.type))
 
-        suffix = struct.pack('!' + self.FORMATS[MessageBlob.MSG_SUFFIX],
-                             '0' * 16, self.SUFFIX)
+        padding = '\x00' * (self.length - self.raw_length)
+        suffix = struct.pack(
+            '!' + self.FORMATS[MessageBlob.MSG_END] % len(padding),
+            len(padding),
+            padding,
+            self.END)
 
         packet = header + self.data + suffix
         self.checksum = md5.md5(packet).digest()
-        packet = header + self.data + \
-            struct.pack('!' + self.FORMATS[MessageBlob.MSG_SUFFIX],
-                        self.checksum, self.SUFFIX)
+
+        # Inject the checksum into the packet at the right place.
+        packet = self._inject_checksum(packet, self.checksum)
 
         assert len(packet) == self.length, \
                "Expected len=%d, got %d." % (len(packet), self.length)
+        return packet
+
+    @classmethod
+    def _inject_checksum(cls, packet, checksum):
+        header, remainder = (
+            packet[ : cls.HEADER_LEN ],
+            packet[ cls.HEADER_LEN : ]
+        )
+
+        header_blob = cls.RAW_FORMATS[MessageBlob.MSG_HEADER]
+        offset = header_blob.index("16s")
+        before = struct.calcsize('!' + ''.join(header_blob[:offset]))
+        packet = header[:before] + checksum + \
+                 header[before + len(checksum):] + remainder
 
         return packet
 
     @classmethod
     def unpack(cls, packet):
-        """ Unpacks a single `CicadaMessage` from a sequence of raw bytes.
+        """ Unpacks a single full packet from a sequence of raw bytes.
 
         Returns a 3-tuple of the new object and remaining data that existed
-        before and after a whole `CicadaMessage` object (if any). If the message
-        is improperly formatted, an `UnpackException` is thrown describing what
-        element was missing or incorrect.
+        before and after a whole packet (if any). If the message is improperly
+        formatted, an `UnpackException` is thrown describing what element was
+        missing or incorrect.
 
         See `UnpackException` for possible errors and their explanations.
         """
@@ -143,8 +191,8 @@ class CicadaMessage(object):
         # Construct a fake suffix to search the packet for it.
         fake_suffix = struct.pack(
             # just grab the terminator formatting
-            "!" + cls.RAW_FORMATS[MessageBlob.MSG_SUFFIX][-1],
-            cls.SUFFIX)
+            "!" + cls.RAW_FORMATS[MessageBlob.MSG_END][-1],
+            cls.END)
 
         end_i = packet.find(fake_suffix)
         if end_i == -1:
@@ -155,20 +203,21 @@ class CicadaMessage(object):
         # indicate the beginning of the message.
         index = 0
         prefix_cache = []
-        while ''.join(prefix_cache) != cls.PROTOCOL and index < len(packet):
+        while ''.join(prefix_cache) not in (cls.CICADA_PR, cls.CHORD_PR) and \
+              index < len(packet):
             b = struct.pack("!c", packet[index])
 
             # Keep a rolling list of bytes that matches the length of the
             # expected prefix string.
             prefix_cache.append(b)
-            prefix_cache = prefix_cache[-len(cls.PROTOCOL):]
+            prefix_cache = prefix_cache[-len(cls.CICADA_PR):]
 
             index += 1
 
         if index >= len(packet):
             raise UnpackException(ExceptionType.EXC_NO_PREFIX)
 
-        start_i = index - len(cls.PROTOCOL)
+        start_i = index - len(cls.CICADA_PR)
 
         # Extract an entire message from the raw packet.
         cicada = packet[start_i:end_i]
@@ -178,7 +227,8 @@ class CicadaMessage(object):
             """
             blob_len = struct.calcsize('!' + fmt)
             assert len(data[i:]) >= blob_len, "Invalid blob."
-            return struct.unpack('!' + fmt, data[i : i + blob_len])[0], blob_len + i
+            return (struct.unpack('!' + fmt, data[i : i + blob_len])[0],
+                    blob_len + i)
 
         ## Validate the header.
         #
@@ -192,52 +242,56 @@ class CicadaMessage(object):
         header_fmt = cls.RAW_FORMATS[MessageBlob.MSG_HEADER]
         offset = 0
 
-        getBlob = lambda i: CicadaMessage.extract_chunk(header_fmt[i], cicada, offset)
+        getBlob = lambda i: MessageContainer.extract_chunk(
+            header_fmt[i], cicada, offset)
+
         protocol,  offset = getBlob(0)
         version,   offset = getBlob(1)
-        msgtype,   offset = getBlob(2)
-        total_len, offset = getBlob(3)
-        data_len,  offset = getBlob(4)
 
-        if protocol != cls.PROTOCOL:
+        if protocol not in (cls.CICADA_PR, cls.CHORD_PR):
             raise UnpackException(ExceptionType.EXC_WRONG_PROTOCOL, protocol)
 
         if version != cls.VERSION:
             raise UnpackException(ExceptionType.EXC_WRONG_VERSION, version)
 
-        if total_len != end_i - start_i:
-            raise UnpackException(ExceptionType.EXC_WRONG_LENGTH, total_len, end_i - start_i)
+        # TODO: Ensure type matches protocol.
+        msgtype,   offset = getBlob(2)
+        seq_no,    offset = getBlob(3)
+        checksum,  offset = getBlob(4)
+        payload_sz,offset = getBlob(5)
+        quicktype, offset = getBlob(6)
 
+        total_len = utils.nextmul(cls.HEADER_LEN + payload_sz + cls.SUFFIX_LEN, 8)
+        if total_len != end_i - start_i:
+            raise UnpackException(ExceptionType.EXC_WRONG_LENGTH, total_len,
+                                  end_i - start_i)
+
+        # pad_sz,    offset = getBlob(6)
+        # pad,       offset = cls.extract_chunk(header_fmt[7] % pad_sz,
+        #                                       cicada, offset)
+        # if pad != '\x00' * pad_sz:
+        #     raise UnpackException(ExceptionType.EXC_BAD_CHECKSUM)
+
+        import pdb; pdb.set_trace()
         # TODO: Data length validation.
         data, = struct.unpack(
-            "!%ds" % data_len,
-            packet[start_i + cls.HEADER_LEN : end_i - cls.SUFFIX_LEN])
+            "!%ds" % payload_sz,
+            packet[start_i + cls.HEADER_LEN : \
+                   start_i + cls.HEADER_LEN + payload_sz])
         cicada = cls(msgtype)
         cicada.data = data
 
         # Checksum validation.
-        chk, gk = struct.unpack(
-            cls.FORMATS[MessageBlob.MSG_SUFFIX],
-            packet[end_i - cls.SUFFIX_LEN : end_i])
-
-        all_but_suffix = packet[start_i : end_i - cls.SUFFIX_LEN]
-        fake_checksum  = '0' * 16
-        after_checksum = packet[end_i - cls.SUFFIX_LEN + 16 : end_i]
-        chunk = ''.join([
-            all_but_suffix,
-            fake_checksum,
-            after_checksum
-        ])
-        checker = md5.md5(chunk).digest()
-
-        if chk != checker:
+        fake_packet = cls._inject_checksum(packet, '\x00' * 16)
+        expected = md5.md5(fake_packet).digest()
+        if checksum != expected:
             raise UnpackException(ExceptionType.EXC_BAD_CHECKSUM)
 
-        cicada.checksum = checker
-        print "Checksum:", cicada, repr(checker)
+        cicada.checksum = checksum
+        print "Checksum:", cicada, repr(cicada.checksum)
         return (cicada, packet[:start_i], packet[end_i:])
 
-    def _debug(self):
+    def _debug(self, data=None):
         """ Inspects the format and dumps a readable packet representation.
 
         We have a format, as a list of `struct` specifiers, as well as a debug
@@ -245,7 +299,7 @@ class CicadaMessage(object):
         equivalent.
         """
         import re
-        data = self.pack()
+        data = self.pack() if data is None else data
 
         # Stores a readable format string for each struct-format.
         results = []
@@ -289,6 +343,32 @@ class CicadaMessage(object):
 
             print "%s: %s %s" % (maxlen % fmt, repr(chunk), repr(unpacked))
 
+    @property
+    def raw_length(self):
+        return self.HEADER_LEN + len(self.data) + self.SUFFIX_LEN
+
+    @property
+    def length(self):
+        return utils.nextmul(self.raw_length, 8)
+
+    @property
+    def protocol(self):
+        return self.CHORD_PR \
+            if   self.type <= MessageType.MSG_CH_ERROR \
+            else self.CICADA_PR
+
+    @property
+    def msg_type(self):
+        return self.type
+
+    @property
+    def seq(self):
+        return self._sequence
+
+    @property
+    def foo(self):
+        return self._foo
+
     @staticmethod
     def extract_chunk(fmt, data, i):
         """ Extracts a chunk `fmt` out of a packet `data` at index `i`.
@@ -311,10 +391,6 @@ class CicadaMessage(object):
     def __repr__(self): return str(self)
     def __str__(self):
         return "<%s | %d bytes>" % (MessageType.LOOKUP[self.type], self.length)
-
-    @property
-    def length(self):
-        return self.HEADER_LEN + len(self.data) + self.SUFFIX_LEN
 
 class FormatMetaclass(type):
     def __new__(cls, clsname, bases, dct):
@@ -508,21 +584,22 @@ class FailMessage(BaseMessage):
 EXCEPTION_STRINGS = {
     ExceptionType.EXC_TOO_SHORT: ''.join([
         "Message too small! Expected >= ",
-        str(CicadaMessage.MIN_MESSAGE_LEN),
+        str(MessageContainer.MIN_MESSAGE_LEN),
         " bytes, got %d bytes." ]),
     ExceptionType.EXC_NO_PREFIX: \
-        "No message prefix found! Expected '%s' to start packet." % (
-            CicadaMessage.PROTOCOL),
+        "No message prefix found! Expected '%s' or '%s' to start packet." % (
+            MessageContainer.CHORD_PR, MessageContainer.CICADA_PR),
     ExceptionType.EXC_NO_SUFFIX: \
         "No message end found! Expected '%s' to end packet." % (
-            CicadaMessage.SUFFIX),
+            MessageContainer.END),
     ExceptionType.EXC_WRONG_PROTOCOL: ''.join([
         "Unsupported protocol! Expected '",
-        CicadaMessage.PROTOCOL,
+        MessageContainer.CHORD_PR, "' or '",
+        MessageContainer.CICADA_PR,
         "', got '%s'." ]),
     ExceptionType.EXC_WRONG_VERSION: ''.join([
         "Unsupported protocol version! Expected '",
-        CicadaMessage.version_to_str(CicadaMessage.VERSION),
+        MessageContainer.version_to_str(MessageContainer.VERSION),
         "', got '%s'." ]),
     ExceptionType.EXC_WRONG_LENGTH: \
         "Incorrect packet length! Expected %d bytes, got %d bytes.",

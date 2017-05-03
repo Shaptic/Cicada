@@ -1,51 +1,52 @@
-Contains packet-layer descriptions of the Cicada protocol.
+Contains packet-layer descriptions of the _Cicada_ protocol.
 
 # Protocol #
-
 There are two main categories of message types: those belonging to the low-
-level Chord protocol, and those belonging to the higher-level Cicada protocol
-which facilitates the organization of independent Chord rings and nodes.
+level _Chord_ protocol, and those belonging to the higher-level _Cicada_
+protocol which facilitates the organization of independent Chord rings and
+nodes.
 
-## Header ##
-
+## Message Container Format ##
 The messages in the Chord protocol use the constant identifier `0x6368` (`ch`)
 whereas those in the Cicada protocol use `0x6369` (`ci`) in their message
 headers.
 
 The header format is as follows:
 
-  - 2-byte protocol identifier.
-  - 2-byte protocol version.
-  - 2-byte message type.
-  - 8-byte sequence number to uniquely identify the message.
-  - 4-byte checksum of the entire message, excluding the checksum field
-           itself, which is treated as zeroed-out.
-  - 4-byte payload length, `P`, which is excluding the header.
-  - 1-byte padding length, `Z`, which is the amount of padding needed to get
-           a word-aligned packet (including payload).
-  - Z-byte padding of `NUL` bytes (`0x00`).
-  - 1-byte indicator of whether this is a request, response, or error. We've
-           already included the full message type earlier, but this is a
-           quick way to identify it.
+  - 2-byte  protocol identifier.
+  - 2-byte  protocol version.
+  - 2-byte  message type.
+  - 4-byte  sequence number to uniquely identify the message.
+  - 16-byte checksum of the entire packet, excluding the checksum field
+            itself, which is treated as zeroed-out.
+  - 4-byte  payload length, `P`, which is excluding the header.
+            a word-aligned packet (including payload).
+  - 1-byte  indicator of whether this is a request, response, or error. We've
+            already included the full message type earlier, but this is a
+            quick way to identify it.
 
 For responses and errors, there are additional fields:
 
-  - 8-byte sequence number *and*
+  - 4-byte sequence number *and*
   - 4-byte checksum of the message we're responding to.
 
-### Header Padding ###
+The content is, naturally, a `P`-byte payload.
 
-The message content, then, is just a `P`-byte payload followed by a 2-byte
-message terminator, `0x474b04` (`GK[EoT byte]`).
+### Terminator ##
+The message is byte-aligned, so there is padding at the end before the
+termination sequence.
 
-In total, including padding, the minimum message size is:
-    2 + 2 + 2 + 8 + 4 + 4 + 1 + 1 + 5 [`0x00` pad] + 3 = **32 bytes**.
+  - Z-byte padding of `NUL` bytes (`0x00`).
+  - 1-byte padding length, `Z`, which is the amount of padding needed to get
+  - 3-byte message terminator, `0x474b04` (`GK[EoT byte]`).
+
+In total, the minimum message size before padding is:
+    2 + 2 + 2 + 4 + 16 + 4 + 1 + 0 + 1 + 3 = **35 bytes**.
 
 Each message is either a request or a response. The response type constant is +1
 to the request type for easy correlation.
 
 ### Chord Message Types ###
-
 In Chord, we are concerned with the following message pairs:
 
   - **Join**        Sent on initialization by a new node (the invitee) to an
