@@ -65,7 +65,7 @@ class Peer(chordnode.ChordNode):
 
         If `existing_socket` exists, there is no connection initiated.
         """
-        if not isinstance(remote_addr, tuple) and len(remote_addr) == 2:
+        if not isinstance(remote_addr, tuple):
             raise TypeError("Must join ring via address pair, got %s!" % (
                 remote_addr))
 
@@ -75,26 +75,25 @@ class Peer(chordnode.ChordNode):
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect(remote_addr)
 
-        self.complete = False   # set when the socket closes
+        self.peer_sock = s
         self.remote_addr = remote_addr
+        self.complete = False   # set when the socket closes
+
         import pdb; pdb.set_trace()
-        self.processor = communication.SocketProcessor(s, self.responder)
-        self.processor.start()
 
         super(Peer, self).__init__("%s:%d" % remote_addr)
 
-    def join_ring(self):
+    def connect(self, processor):
         """ Joins a Chord ring by sending a JOIN message.
 
         The return value is either an error or a message describing the
         successor of this node. The message also implicitly notifies the node
         that we're joining of our existence.
         """
-
         # This will be done using a proper protocol soon.
         self.pr("Waiting on JOIN response...")
-        communication.SocketProcessor.request(self.processor,
-            JoinMessage().build_request(), 10, self.responder)
+        processor.request(processor, JoinMessage().build_request(), 10,
+                          self.responder)
 
     def responder(self, response):
         if response.build_request() != "JOIN\r\n":

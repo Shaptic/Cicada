@@ -1,6 +1,6 @@
 class BaseMessage(object):
-    def __init__(self, response_handler=lambda x: None,
-                       request_handler=lambda x: None):
+    def __init__(self, response_handler=lambda m, b: m,
+                       request_handler=lambda m, b: m):
         self.handlers = (request_handler, response_handler)
         self.msg_type = ""
         pass
@@ -37,10 +37,9 @@ class InfoMessage(BaseMessage):
         - Call a particular handler on a successful parsing.
     """
     def parse_request(self, bytestream):
-        if bytestream.startswith("INFO\r\n"):
+        if bytestream.startswith("INFO"):
             self.msg_type = "REQUEST"
-            return self.handlers[0](self, bytestream)
-
+            return self.handler(self, bytestream)
         return False
 
     def parse_response(self, bytestream):
@@ -48,12 +47,12 @@ class InfoMessage(BaseMessage):
            not bytestream.endswith("\r\n"):
             return False
 
-        b = bytestream[len("INFO-R:") - 1 : -2]
+        b = bytestream[len("INFO-R:") : -2]
         parts = b.split('|')
         self.node_hash = int(parts[0])
-        self.pred_addr = parts[1].split(':')
+        self.pred_addr = list(parts[1].split(':'))
         self.pred_addr[1] = int(self.pred_addr[1])
-        self.succ_addr = parts[2].split(':')
+        self.succ_addr = list(parts[2].split(':'))
         self.succ_addr[1] = int(self.succ_addr[1])
 
         self.msg_type = "RESPONSE"
@@ -70,9 +69,9 @@ class InfoMessage(BaseMessage):
 
 class JoinMessage(BaseMessage):
     def parse_request(self, bytestream):
-        if bytestream.startswith("JOIN\r\n"):
+        if bytestream.startswith("JOIN"):
             self.msg_type = "REQUEST"
-            return self.handlers[0](self, bytestream)
+            return self.handler(self, bytestream)
 
         return False
 
@@ -81,11 +80,12 @@ class JoinMessage(BaseMessage):
            not bytestream.endswith("\r\n"):
             return False
 
-        b = bytestream[len("JOIN-R:") - 1 : -2]
+        b = bytestream[len("JOIN-R:") : -2]
         if b == "NONE":
             self.succ_addr = "NONE"
         else:
             self.succ_addr = b.split(',')
+            self.succ_addr = (self.succ_addr[0], int(self.succ_addr[1]))
 
         self.msg_type = "RESPONSE"
         return self.handler(self, bytestream)
@@ -94,23 +94,25 @@ class JoinMessage(BaseMessage):
         return "JOIN\r\n"
 
     def build_response(self, succ_addr):
-        return "JOIN-R:%s" % ("NONE" if succ_addr is None else (
+        return "JOIN-R:%s\r\n" % ("NONE" if succ_addr is None else (
             "%s,%d" % succ_addr))
 
 
 class NotifyMessage(InfoMessage):
     def parse_request(self, bytestream):
-        if bytestream.startswith("NOTIFY\r\n"):
+        if bytestream.startswith("NOTIFY"):
             self.msg_type = "REQUEST"
-            return self.handlers[0](self, bytestream)
+            return self.handler(self, bytestream)
         return False
 
     def parse_response(self, bytestream):
-        bytestream.replace("NOTIFY-R:", "INFO-R:")
+        bytestream.replace("INFO-R:", "NOTIFY-R:")
         return super(NotifyMessage, self).parse_response(bytestream)
 
     def build_request(self):
         return "NOTIFY\r\n"
 
     def build_response(self, node_hash, predecessor_addr, successor_addr):
-        return super(NotifyMessage, self).build_response(node_hash, predecessor_addr, successor_addr).replace("INFO-R:", "NOTIFY-R:")
+        return super(NotifyMessage, self).build_response(
+            node_hash, predecessor_addr, successor_addr
+        ).replace("INFO-R:", "NOTIFY-R:")
