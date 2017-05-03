@@ -72,6 +72,6 @@ complexity across all nodes; this is a huge improvement over the standard
 - [x] Allow a Chord node to join a ring correctly.
 - [ ] Let the Chord ring recover from a failed node.
 - [x] Implement threading for stabilization routine.
-- [ ] Test threading with respect to concurrent joins. 
-- [ ] Design and implement remote nodes and rings.
+- [x] Test threading with respect to concurrent joins. 
+- [x] Design and implement remote nodes and rings.
 - [ ] Implement underlying p2p socket protocol.
