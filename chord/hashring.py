@@ -132,7 +132,6 @@ class FingerTable(object):
           [5, 9) | ChordNode(hash=6),
           [9, 1) | ChordNode(hash=14) ]
         """
-
         self.modulus = 2 ** bitcount
         self.seen_nodes = set()
         self.entries = [
@@ -186,7 +185,7 @@ class FingerTable(object):
         """
         self.seen_nodes.discard(node)
 
-        removed = {}    # { index: cleaned node }
+        removed = {}    # dict -> { index: cleaned node }
         for i, f in enumerate(self.entries):
             if f.node is node:
                 print "removing", f

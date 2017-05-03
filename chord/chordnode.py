@@ -1,3 +1,5 @@
+""" Outlines a base class for a Chord node object.
+"""
 import threading
 import socket
 import random
@@ -43,7 +45,7 @@ class ChordNode(object):
         self.stable = Stabilizer(self)
         self.stable.start()
 
-    def join_ring(self, homie):
+    def join_ring(self, address):
         """ Joins a Chord ring via a node in the ring. """
         raise NotImplementedError
 

@@ -1,3 +1,11 @@
+""" Defines a local Chord node.
+
+This is the object you want to use to begin structuring a Chord ring on your
+machine. At this point, you can either join an existing ring (by using the
+`LocalChordNode.join_ring` method), or simply by waiting for a node to join
+this ring.
+"""
+
 import threading
 import socket
 import select
@@ -15,12 +23,19 @@ from .message import *
 
 class LocalChordNode(chordnode.ChordNode):
     """ Represents the current local node in the Chord hash ring.
-
-    Specifically, this means the node exists *on this machine* and that no
-    remote lookups or network communication is necessary.
     """
 
     def __init__(self, data, bind_addr=('localhost', 2017)):
+        """ Creates a node on a specific address with specific data.
+
+        Typically, the data that you pass is simply a string representation of
+        the binding address. This is because in Cicada we _use_ the binding
+        address hash as the identifier of the node to route packets.
+
+        :data       the data to be hashed by this Chord node. It creates a
+                    unique identifier for the node.
+        :bind_addr  specifies the address to use for the listener socket.
+        """
         self.local_addr = bind_addr
 
         # This socket is responsible for inbound connections (from new potential
@@ -46,6 +61,40 @@ class LocalChordNode(chordnode.ChordNode):
         self.peers = []
 
         super(LocalChordNode, self).__init__(data)
+
+    def join_ring(self, remote_address, timeout=10):
+        """ Joins a Chord ring through a node at the specified address.
+
+        We use the stabilization technique outlined in the Chord paper, which
+        means that a JOIN only involves asking our entry point for our immediate
+        successor.
+
+        :remote_address     the address referring to a node in a Chord ring.
+        :timeout=30         the number of seconds to wait for a response.
+        """
+        self.pr("join_ring::self", str(self))
+        self.pr("join_ring::addr", str(remote_address))
+
+        assert self.fingers.real_length <= 1, "join_ring: existing nodes!"
+        assert self.predecessor is None,      "join_ring: predecessor set!"
+
+        #
+        # Create a Peer object that represents the external node that is letting
+        # us into the ring. We send a JOIN request to the address, expecting a
+        # response indicating our would-be successor.
+        #
+        # We validate this by establishing a connection to the successor and
+        # adding it to our peer list.
+        #
+        message.JoinMessage(self.local_addr).pack()
+
+
+        joiner_peer = self.add_peer(remote_address)
+        if not self.processor.request(self.processor, joiner_peer.peer_sock,
+                                      JoinMessage().build_request(), timeout,
+                                      self.on_join_response):
+            raise ValueError("JOIN request didn't get a response.")
+
 
     def add_peer(self, peer_address, peer_socket=None):
         """ From an arbitrary remote address, add a Peer to the ring.
@@ -93,39 +142,6 @@ class LocalChordNode(chordnode.ChordNode):
 
         if self.predecessor is node:
             self.predecessor = self.fingers.find_predecessor(node.hash - 1)
-
-    def join_ring(self, remote_address):
-        """ Joins a Chord ring using a specified node as its "entry".
-
-        We use the stabilization technique outlined in the Chord paper, which
-        means that a JOIN only involves asking our entry point for our immediate
-        successor.
-
-        :homie  An address to use to join the Chord ring.
-        """
-        self.pr("join_ring::self", str(self))
-        self.pr("join_ring::addr", str(remote_address))
-
-        assert self.fingers.real_length <= 1, "join_ring: existing nodes!"
-        assert self.predecessor is None,     "join_ring: predecessor set!"
-
-        self.predecessor = None
-
-        #
-        # Create a Peer object that represents the external node that we are
-        # using to join the ring. After this JOIN request has been processed
-        # (that is, the RJOIN response has been received), the joiner socket is
-        # moved to the peer list.
-        #
-        # Then, establish a connection to the successor node that was given to
-        # us through the JOIN response.
-        #
-
-        joiner_peer = self.add_peer(remote_address)
-        if not self.processor.request(self.processor, joiner_peer.peer_sock,
-                                      JoinMessage().build_request(), 10,
-                                      self.on_join_response):
-            raise ValueError("JOIN request didn't get a response.")
 
     def stabilize(self):
         """ Runs the stabilization algorithm.
