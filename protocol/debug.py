@@ -1,19 +1,24 @@
 import socket
 import sys
 
-def print_args(fn):
-    def deco(*args, **kwargs):
-        print "Function called:", args, kwargs
-        return fn(*args, **kwargs)
-    return deco
 
-def hexdump(data, chars=16, indent=4):
+def hexdump(data, chars=16, indent=0):
+    # Converts a line to a space separated hexadecimal string
+    # Packs 16 bytes of hex, returns hex string
+    def to_hex(line):
+        return ' '.join("%02X" % ord(c) for c in line) + ' ' + \
+               ' '.join('  ' for i in range(chars - len(line) + 1))
+
+    # Converts a string into printables
+    def to_string(line):
+        return ''.join(c if ord(c) >= 32 and ord(c) < 127 else '.' for c in line)
+
     for i in xrange(0, len(data), chars):
-        row = data[i:i+chars]
-        dump = ' '.join("%02x" % ord(x) for x in row)
-        spce = "%s" % (' ' * ((16 * 2) + 15 - len(dump)))
-        asci = ''.join('.' if ord(x) < 32 or ord(x) >= 128 else x for x in row)
-        print dump, spce, asci
+        row = data[i : i + chars]
+        dump = to_hex(row)
+        asci = to_string(row)
+        print "%s%s %s" % (' ' * indent, dump, asci)
+
 
 class LoggedSocket(socket.socket):
     def __init__(self, logfile=sys.stdout):

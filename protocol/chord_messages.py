@@ -178,8 +178,15 @@ class JoinResponse(message.BaseMessage):
 if __name__ == "__main__":
     j = JoinRequest(("127.0.0.1", 5000))
     print j, repr(j.pack())
-    j2 = JoinRequest.unpack(j.pack())
-    print j2, repr(j2.pack())
+    k = JoinRequest.unpack(j.pack())
+    print k, repr(k.pack())
+    x = JoinResponse("a" * (BITCOUNT / 8), ("10.0.0.1", 6000))
+    print x, repr(x.pack())
+    y = JoinResponse.unpack(x.pack())
+    print y, repr(y.pack())
+
+    assert j.pack() == k.pack(),  "JoinRequest doesn't [en|de]code right!"
+    assert x.pack() == y.pack(), "JoinResponse doesn't [en|de]code right!"
 
 # class JoinAckMessage(BaseMessage):
 #     """ Prepares a response to a JOIN packet.
