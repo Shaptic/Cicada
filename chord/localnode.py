@@ -70,7 +70,7 @@ class LocalChordNode(chordnode.ChordNode):
         successor.
 
         :remote_address     the address referring to a node in a Chord ring.
-        :timeout=30         the number of seconds to wait for a response.
+        :timeout[=30]       the number of seconds to wait for a response.
         """
         self.pr("join_ring::self", str(self))
         self.pr("join_ring::addr", str(remote_address))
@@ -86,15 +86,18 @@ class LocalChordNode(chordnode.ChordNode):
         # We validate this by establishing a connection to the successor and
         # adding it to our peer list.
         #
-        message.JoinMessage(self.local_addr).pack()
-
 
         joiner_peer = self.add_peer(remote_address)
-        if not self.processor.request(self.processor, joiner_peer.peer_sock,
-                                      JoinMessage().build_request(), timeout,
-                                      self.on_join_response):
-            raise ValueError("JOIN request didn't get a response.")
+        join_msg = message.JoinMessage(self.local_addr)
+        if not self.processor.request(joiner_peer.peer_sock, join_msg,
+                                      self.on_join_response, timeout):
+            raise ValueError("JOIN request didn't get a response in time.")
 
+        # if not self.processor.request(self.processor, joiner_peer.peer_sock,
+        #                               JoinMessage().build_request(), timeout,
+        #                               self.on_join_response):
+
+        return join_msg
 
     def add_peer(self, peer_address, peer_socket=None):
         """ From an arbitrary remote address, add a Peer to the ring.
