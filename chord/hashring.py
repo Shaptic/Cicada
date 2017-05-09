@@ -3,12 +3,11 @@ import hashlib
 from . import search
 from . import utils
 
-BITCOUNT = 5# len(chord_hash("0")) * 8
-HASHMOD  = 2 ** BITCOUNT
-
-
 def chord_hash(data):
-    return str(hashlib.sha1(data).digest())[:1]
+    return hashlib.sha256(data).digest()
+
+BITCOUNT = len(chord_hash("0")) * 8
+HASHMOD  = 2 ** BITCOUNT
 
 def pack_string(data):
     """ Turns a string into its unique numeric representation.

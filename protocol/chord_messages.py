@@ -41,8 +41,7 @@ class JoinRequest(message.BaseMessage):
     ]
 
     def __init__(self, listener_addr):
-        super(JoinRequest, self).__init__(
-            message.MessageType.MSG_CH_JOIN)
+        super(JoinRequest, self).__init__(message.MessageType.MSG_CH_JOIN)
 
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
@@ -111,8 +110,12 @@ class JoinResponse(message.BaseMessage):
     FAKE_NODE = collections.namedtuple("Node", "local_addr hash")
 
     def __init__(self, node_hash, listener_addr, finger_table=[]):
-        super(JoinResponse, self).__init__(
-            message.MessageType.MSG_CH_JOINR)
+        super(JoinResponse, self).__init__(message.MessageType.MSG_CH_JOINR)
+
+        if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
+            raise TypeError("Please pass a two-tuple address!")
+
+        assert len(node_hash) == (BITCOUNT / 8), "Invalid hash size."
 
         self.node_hash = node_hash
         self.listener = listener_addr
@@ -124,26 +127,23 @@ class JoinResponse(message.BaseMessage):
     def pack(self):
         hash_bytes = BITCOUNT / 8
         entry_bytes = ''.join([
-            struct.pack('!' % (''.join(self.ENTRY_FORMAT % hash_bytes)),
+            struct.pack('!' + (''.join(self.ENTRY_FORMAT) % hash_bytes),
                 entry.start, entry.end, utils.ip_to_int(entry.addr[0]),
                 entry.addr[1], entry.hash
             ) for entry in self.fingers
         ])
 
-        pkt = struct.pack('!' % (self.FORMAT % len(hash_bytes)),
+        pkt = struct.pack('!' + (self.FORMAT % len(entry_bytes)),
             hash_bytes, self.node_hash, utils.ip_to_int(self.listener[0]),
             self.listener[1], len(self.fingers), entry_bytes)
 
         return pkt
 
-    @staticmethod
-    def unpack(bytestream):
-        super(JoinResponse, self).unpack(bytestream)
-        hash_length, = struct.unpack('!' + bytestream[:2])
-
+    @classmethod
+    def unpack(cls, bytestream):
         offset = 0
-        get = lambda idx: MessageContainer.extract_chunk(
-            self.RAW_FORMAT[idx], bytestream, offset)
+        get = lambda idx: message.MessageContainer.extract_chunk(
+            cls.RAW_FORMAT[idx], bytestream, offset)
 
         hash_length, offset = get(0)
         hash_value,  offset = get(1)
@@ -152,7 +152,7 @@ class JoinResponse(message.BaseMessage):
         finger_cnt,  offset = get(4)
 
         offset = 0
-        get = lambda idx: MessageContainer.extract_chunk(
+        get = lambda idx: message.MessageContainer.extract_chunk(
             self.ENTRY_FORMAT[idx], bytestream, offset)
 
         fingers = []
@@ -161,20 +161,25 @@ class JoinResponse(message.BaseMessage):
             interval_ed, offset = get(1)
             node_ip,     offset = get(2)
             node_pt,     offset = get(3)
-            hash_val,    offset = MessageContainer.extract_chunk(
-                self.ENTRY_FORMAT[4] % hash_length, bytestream, offset)
+            hash_val,    offset = message.MessageContainer.extract_chunk(
+                cls.ENTRY_FORMAT[4] % hash_length, bytestream, offset)
 
-            node = self.FAKE_NODE((utils.int_to_ip(node_ip), node_pt), hash_val)
+            node = cls.FAKE_NODE((utils.int_to_ip(node_ip), node_pt), hash_val)
             fingers.append(hashring.Finger(interval_st, interval_ed, node))
 
         return JoinResponse(hash_value, (utils.int_to_ip(listener_ip),
                             listener_pt), fingers)
 
     def __str__(self):
-        return "<%d | Node (%s:%d),hash=%s,fingers=%d>" % (
+        return "<%s | Node (%s:%d),hash=%s,fingers=%d>" % (
             self.msg_type_str, self.listener[0], self.listener[1],
-            len(self.fingers))
+            self.node_hash[:8], len(self.fingers))
 
+if __name__ == "__main__":
+    j = JoinRequest(("127.0.0.1", 5000))
+    print j, repr(j.pack())
+    j2 = JoinRequest.unpack(j.pack())
+    print j2, repr(j2.pack())
 
 # class JoinAckMessage(BaseMessage):
 #     """ Prepares a response to a JOIN packet.
