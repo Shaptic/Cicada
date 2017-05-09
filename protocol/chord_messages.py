@@ -1,0 +1,285 @@
+import struct
+import collections
+
+from chord.hashring import BITCOUNT
+
+from . import message
+# from . import utils
+
+class utils:
+    @staticmethod
+    def ip_to_int(addr):
+        a, b, c, d = addr.split('.')
+        return sum([
+            int(a) << 24,
+            int(b) << 16,
+            int(c) << 8,
+            int(d)
+        ])
+
+    @staticmethod
+    def int_to_ip(n):
+        return '.'.join([
+            str((n & 0xFF000000) >> 24),
+            str((n & 0x00FF0000) >> 16),
+            str((n & 0x0000FF00) >> 8),
+            str((n & 0x000000FF))
+        ])
+
+
+class JoinRequest(message.BaseMessage):
+    """ Prepares a JOIN request.
+
+    A JOIN packet will include the listener address of the local Chord node that
+    is sending out this message. This way, other peers can route through to this
+    node.
+    """
+
+    RAW_FORMAT = [
+        "I",    # IPv4 address
+        "H",    # port
+    ]
+
+    def __init__(self, listener_addr):
+        super(JoinRequest, self).__init__(
+            message.MessageType.MSG_CH_JOIN)
+
+        if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
+            raise TypeError("Please pass a two-tuple address!")
+
+        self.address = utils.ip_to_int(listener_addr[0])
+        self.port = listener_addr[1]
+
+    def pack(self):
+        return struct.pack('!' + self.FORMAT, self.address, self.port)
+
+    @classmethod
+    def unpack(cls, bytestream):
+        offset = 0
+        get = lambda i: message.MessageContainer.extract_chunk(
+            cls.RAW_FORMAT[i], bytestream, offset)
+
+        ip, offset  = get(0)
+        port, offset = get(1)
+
+        j = JoinRequest((utils.int_to_ip(ip), port))
+        return j
+
+    @property
+    def ip(self):
+        return utils.int_to_ip(self.address)
+
+    def __str__(self):
+        return "<%s | listen=%s:%d>" % (self.msg_type_str, self.ip, self.port)
+
+
+class JoinResponse(message.BaseMessage):
+    """ Prepares a JOIN-RESP response packet.
+
+    The response contains full metadata information about the node. This
+    includes:
+        - The hash length specifier, 2 bytes
+        - The peer hash, based on the hash length.
+        - Finger table:
+            - finger table entry count, 4 bytes
+            - the finger table entries, which is an interval, split into two
+              4-byte integers outlining the range, as well as the hash and
+              remote address of the peer responsible for that interval.
+        - The peer listener socket, for other nodes to join.
+    """
+
+    ENTRY_FORMAT = [
+        "I",    # interval start
+        "I",    # interval end
+        "I",    # node ip
+        "H",    # node port
+        "%ds",  # hash
+    ]
+
+    RAW_FORMAT = [
+        "H",    # 2-byte hash length, in bytes, 32 for SHA256
+        "%ds" % (BITCOUNT / 8),
+                # SHA256 hash
+        "I",    # listener ip
+        "H",    # listener port
+        "I",    # number of entries in the table, usually BITCOUNT
+        # a single table entry, repeated for the number of spec'd times
+        "%ds"
+    ]
+
+    ENTRY = collections.namedtuple("Finger", "start end addr hash")
+    FAKE_NODE = collections.namedtuple("Node", "local_addr hash")
+
+    def __init__(self, node_hash, listener_addr, finger_table=[]):
+        super(JoinResponse, self).__init__(
+            message.MessageType.MSG_CH_JOINR)
+
+        self.node_hash = node_hash
+        self.listener = listener_addr
+        self.fingers = []
+        for entry in finger_table:
+            self.fingers.append(self.ENTRY(entry.start, entry.end,
+                entry.node.local_addr, entry.node.hash))
+
+    def pack(self):
+        hash_bytes = BITCOUNT / 8
+        entry_bytes = ''.join([
+            struct.pack('!' % (''.join(self.ENTRY_FORMAT % hash_bytes)),
+                entry.start, entry.end, utils.ip_to_int(entry.addr[0]),
+                entry.addr[1], entry.hash
+            ) for entry in self.fingers
+        ])
+
+        pkt = struct.pack('!' % (self.FORMAT % len(hash_bytes)),
+            hash_bytes, self.node_hash, utils.ip_to_int(self.listener[0]),
+            self.listener[1], len(self.fingers), entry_bytes)
+
+        return pkt
+
+    @staticmethod
+    def unpack(bytestream):
+        super(JoinResponse, self).unpack(bytestream)
+        hash_length, = struct.unpack('!' + bytestream[:2])
+
+        offset = 0
+        get = lambda idx: MessageContainer.extract_chunk(
+            self.RAW_FORMAT[idx], bytestream, offset)
+
+        hash_length, offset = get(0)
+        hash_value,  offset = get(1)
+        listener_ip, offset = get(2)
+        listener_pt, offset = get(3)
+        finger_cnt,  offset = get(4)
+
+        offset = 0
+        get = lambda idx: MessageContainer.extract_chunk(
+            self.ENTRY_FORMAT[idx], bytestream, offset)
+
+        fingers = []
+        for i in xrange(finger_cnt):
+            interval_st, offset = get(0)
+            interval_ed, offset = get(1)
+            node_ip,     offset = get(2)
+            node_pt,     offset = get(3)
+            hash_val,    offset = MessageContainer.extract_chunk(
+                self.ENTRY_FORMAT[4] % hash_length, bytestream, offset)
+
+            node = self.FAKE_NODE((utils.int_to_ip(node_ip), node_pt), hash_val)
+            fingers.append(hashring.Finger(interval_st, interval_ed, node))
+
+        return JoinResponse(hash_value, (utils.int_to_ip(listener_ip),
+                            listener_pt), fingers)
+
+    def __str__(self):
+        return "<%d | Node (%s:%d),hash=%s,fingers=%d>" % (
+            self.msg_type_str, self.listener[0], self.listener[1],
+            len(self.fingers))
+
+
+# class JoinAckMessage(BaseMessage):
+#     """ Prepares a response to a JOIN packet.
+
+#     This includes all relevant channel metadata associated with the ID:
+#         - readable channel name
+#         - current number of users, N
+#         - random selection of log_2(N) neighbors
+
+#     The user is the responsible for talking to these neighbors.
+#     """
+#     RAW_FORMAT = [
+#         "%ds" % channel.CHANNEL_ID_LENGTH,
+#                                     # unique channel ID
+#         "H",                        # 2-byte name length, LEN
+#         "%ds",                      # LEN-byte readable channel name
+#         "I",                        # 4-byte user count
+#         "H",                        # 2-byte neighbor count
+#     ]
+
+#     def __init__(self, channel_id, channel_name, user_count, neighbor_count):
+#         if not isinstance(channel_id, channel.ChannelID):
+#             raise TypeError("Channel ID is not an object.")
+
+#         self.pkt = CicadaMessage(MessageType.MSG_JOIN_ACK)
+#         self.pkt.data = struct.pack(
+#             "!%s" % (self.FORMAT % len(channel_name)),
+#             str(channel_id), len(channel_name), channel_name,
+#             user_count, neighbor_count)
+
+#         self.channel_id = channel_id
+#         self.name = channel_name
+#         self.users = user_count
+#         self.neighbors = neighbor_count
+
+#     @classmethod
+#     def unpack(cls, packet):
+#         obj, pre, post = CicadaMessage.unpack(packet)
+
+#         offset = 0
+#         getBlob = lambda i: CicadaMessage.extract_chunk(
+#             cls.RAW_FORMAT[i], obj.data, offset)
+
+#         chan_id, offset  = getBlob(0)
+#         name_len, offset = getBlob(1)
+#         name, offset     = CicadaMessage.extract_chunk(
+#             cls.RAW_FORMAT[2] % name_len, obj.data, offset)
+#         ucount, offset   = getBlob(3)
+#         ncount, offset   = getBlob(4)
+
+#         obj = JoinAckMessage(channel.ChannelID(chan_id), name, ucount, ncount)
+#         return obj, pre, post
+
+#     def __str__(self):
+#         return "<%s \"%s\" | id=%s;u=%d/%d>" % (
+#             MessageType.LOOKUP[self.pkt.type],
+#             self.name, self.channel_id, self.users, self.neighbors)
+
+# class FailMessage(BaseMessage):
+#     """ Represents a generic failure message, containing details within it.
+
+#     This saves the effort of having a unique failure format for each message
+#     type. Instead, the failure message contains within it these details:
+#         - Checksum of the message that triggered the failure.
+#         - The severity of the failure (1=warning, 2=error, 3=fatal)
+#         - An error message describing the failure.
+
+#     On a fatal error, the connection will be closed.
+#     """
+#     RAW_FORMAT = [
+#         "16s",  # 16-byte checksum of the message that caused the error
+#         "b",    # 1-byte  severity
+#         "I",    # 4-byte  length of the error message
+#         "%ds",  # The error message
+#     ]
+
+#     def __init__(self, error_type, error_msg, cause, severity=2):
+#         if not isinstance(cause.pkt, CicadaMessage) or \
+#            not hasattr(cause.pkt, "checksum"):
+#             raise TypeError("Cause must contain a valid packet.")
+
+#         self.checksum = cause.pkt.checksum
+#         self.error_msg = error_msg
+#         self.severity = severity
+
+#         self.pkt = CicadaMessage(error_type)
+#         self.pkt.data = struct.pack('!' + self.FORMAT,
+#             self.cause, self.severity,
+#             len(self.error_msg), self.error_msg)
+
+#     @classmethod
+#     def unpack(cls, pkt):
+#         obj, pre, post = CicadaMessage.unpack(pkt)
+
+#         offset = 0
+#         getBlob = lambda i: CicadaMessage.extract_chunk(
+#             obj.data, cls.RAW_FORMAT[i], offset)
+
+#         chk, offset = getBlob(0)
+#         sev, offset = getBlob(1)
+#         leg, offset = getBlob(2)
+#         err, offset = CicadaMessage.extract_chunk(
+#             obj.data, cls.RAW_FORMAT[3] % leg, offset)
+
+#         return FailMessage(obj.type, err, chk, sev)
+
+#     def __str__(self):
+#         return "<FAIL | msg=%s>" % (self.error_msg)

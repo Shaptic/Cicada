@@ -10,10 +10,14 @@ import channel
 from   errors import ExceptionType
 from   chord import utils
 
+
 class MessageBlob:
+    """ Describes a particular "chunk" in a message.
+    """
     MSG_HEADER  = 0
     MSG_PAYLOAD = 1
     MSG_END     = 2
+
 
 class MessageType:
     """ Describes the various types of messages in the Cicada protocol.
@@ -48,10 +52,12 @@ class MessageType:
         MSG_CH_ACK:     "ACK",
     }
 
+
 class QuickType:
     ERROR    = 0x01
     REQUEST  = 0x02
     RESPONSE = 0x04
+
 
 class UnpackException(Exception):
     """ Represents an exception that occurs when decoding a packet.
@@ -59,6 +65,7 @@ class UnpackException(Exception):
     def __init__(self, exc_type, *args):
         super(UnpackException, self).__init__(
             EXCEPTION_STRINGS[exc_type] % args)
+
 
 class MessageContainer(object):
     """ An abstraction of a raw packet in the Cicada protocol.
@@ -128,6 +135,7 @@ class MessageContainer(object):
         """
         self.type = msg_type
         self.data = kwargs.get("data", "")
+        self.seq  = kwargs.get("sequence", 0)
 
     def pack(self):
         """ Packs the packet into a binary format for transfer.
@@ -137,7 +145,7 @@ class MessageContainer(object):
             self.protocol,
             self.VERSION,
             self.type,
-            0xFFFFFFFF,
+            self.seq,
             '\x00' * 16,
             len(self.data),
             MessageContainer.quick_type(self.type))
@@ -178,49 +186,13 @@ class MessageContainer(object):
     def unpack(cls, packet):
         """ Unpacks a single full packet from a sequence of raw bytes.
 
-        Returns a 3-tuple of the new object and remaining data that existed
-        before and after a whole packet (if any). If the message is improperly
-        formatted, an `UnpackException` is thrown describing what element was
-        missing or incorrect.
-
-        See `UnpackException` for possible errors and their explanations.
+        The assumption is that the entire bytestream makes up a complete and
+        correct packet object. If the message is improperly formatted, an
+        `UnpackException` is thrown describing what element was missing or
+        incorrect.
         """
         if len(packet) < cls.MIN_MESSAGE_LEN:
             raise UnpackException(ExceptionType.EXC_TOO_SHORT, len(packet))
-
-        # Construct a fake suffix to search the packet for it.
-        fake_suffix = struct.pack(
-            # just grab the terminator formatting
-            "!" + cls.RAW_FORMATS[MessageBlob.MSG_END][-1],
-            cls.END)
-
-        end_i = packet.find(fake_suffix)
-        if end_i == -1:
-            raise UnpackException(ExceptionType.EXC_NO_SUFFIX)
-        end_i += len(fake_suffix)   # first byte of next message (if any)
-
-        # Extract one byte at a time until we match the prefix, which will
-        # indicate the beginning of the message.
-        index = 0
-        prefix_cache = []
-        while ''.join(prefix_cache) not in (cls.CICADA_PR, cls.CHORD_PR) and \
-              index < len(packet):
-            b = struct.pack("!c", packet[index])
-
-            # Keep a rolling list of bytes that matches the length of the
-            # expected prefix string.
-            prefix_cache.append(b)
-            prefix_cache = prefix_cache[-len(cls.CICADA_PR):]
-
-            index += 1
-
-        if index >= len(packet):
-            raise UnpackException(ExceptionType.EXC_NO_PREFIX)
-
-        start_i = index - len(cls.CICADA_PR)
-
-        # Extract an entire message from the raw packet.
-        cicada = packet[start_i:end_i]
 
         def getBlob(fmt, data, i):
             """ Extracts a chunk `fmt` out of a packet `data` at index `i`.
@@ -243,7 +215,7 @@ class MessageContainer(object):
         offset = 0
 
         getBlob = lambda i: MessageContainer.extract_chunk(
-            header_fmt[i], cicada, offset)
+            header_fmt[i], packet, offset)
 
         protocol,  offset = getBlob(0)
         version,   offset = getBlob(1)
@@ -262,9 +234,9 @@ class MessageContainer(object):
         quicktype, offset = getBlob(6)
 
         total_len = utils.nextmul(cls.HEADER_LEN + payload_sz + cls.SUFFIX_LEN, 8)
-        if total_len != end_i - start_i:
+        if total_len != len(packet):
             raise UnpackException(ExceptionType.EXC_WRONG_LENGTH, total_len,
-                                  end_i - start_i)
+                                  len(packet))
 
         # pad_sz,    offset = getBlob(6)
         # pad,       offset = cls.extract_chunk(header_fmt[7] % pad_sz,
@@ -272,26 +244,26 @@ class MessageContainer(object):
         # if pad != '\x00' * pad_sz:
         #     raise UnpackException(ExceptionType.EXC_BAD_CHECKSUM)
 
-        import pdb; pdb.set_trace()
         # TODO: Data length validation.
         data, = struct.unpack(
             "!%ds" % payload_sz,
             packet[start_i + cls.HEADER_LEN : \
                    start_i + cls.HEADER_LEN + payload_sz])
-        cicada = cls(msgtype)
-        cicada.data = data
+
+        cicada = MessageContainer(msgtype, data=data, sequence=seq_no)
 
         # Checksum validation.
-        fake_packet = cls._inject_checksum(packet, '\x00' * 16)
+        fake_packet = MessageContainer._inject_checksum(packet, '\x00' * 16)
         expected = md5.md5(fake_packet).digest()
         if checksum != expected:
             raise UnpackException(ExceptionType.EXC_BAD_CHECKSUM)
 
         cicada.checksum = checksum
         print "Checksum:", cicada, repr(cicada.checksum)
-        return (cicada, packet[:start_i], packet[end_i:])
+        return cicada
 
-    def _debug(self, data=None):
+    @staticmethod
+    def debug_packet(self, data):
         """ Inspects the format and dumps a readable packet representation.
 
         We have a format, as a list of `struct` specifiers, as well as a debug
@@ -361,14 +333,6 @@ class MessageContainer(object):
     def msg_type(self):
         return self.type
 
-    @property
-    def seq(self):
-        return self._sequence
-
-    @property
-    def foo(self):
-        return self._foo
-
     @staticmethod
     def extract_chunk(fmt, data, i):
         """ Extracts a chunk `fmt` out of a packet `data` at index `i`.
@@ -380,11 +344,6 @@ class MessageContainer(object):
     @staticmethod
     def version_to_str(v):
         """ Converts a 2-byte version blob into a readable string.
-
-        >>> CicadaMessage.version_to_str(CicadaMessage.VERSION)
-        '0.1'
-        >>> CicadaMessage.version_to_str("\x01\x45")
-        '1.69'
         """
         return "%d.%d" % (ord(v[0]), ord(v[1]))
 
@@ -392,7 +351,9 @@ class MessageContainer(object):
     def __str__(self):
         return "<%s | %d bytes>" % (MessageType.LOOKUP[self.type], self.length)
 
+
 class FormatMetaclass(type):
+    """ Some voodoo; I forgot tbh. """
     def __new__(cls, clsname, bases, dct):
         fmt = ''.join(dct["RAW_FORMAT"])
         dct["FORMAT"] = fmt
@@ -404,182 +365,33 @@ class FormatMetaclass(type):
             dct["MESSAGE_SIZE"] = struct.calcsize('!' + fmt)
         return type.__new__(cls, clsname, bases, dct)
 
+
 class BaseMessage(object):
     """ Base class for all _data_ messages sent using the Cicada protocol.
     """
     __metaclass__ = FormatMetaclass
     RAW_FORMAT = []
 
-    def __init__(self): self.pkt = None
-    def pack(self):     return self.pkt.pack()
+    def __init__(self, msg_type): self.type = msg_type
+    def pack(self):     return ""
     def __repr__(self): return str(self)
 
     @classmethod
     def unpack(cls, pkt):
-        obj, pre, post = CicadaMessage.unpack(pkt)
-
         # Validate data length.
-        if len(obj.data) < cls.MESSAGE_SIZE:
-            print len(obj.data), "too short, need >=", cls.MESSAGE_SIZE
+        if len(pkt) < cls.MESSAGE_SIZE:
+            print len(pkt), "too short, need >=", cls.MESSAGE_SIZE
 
-        return obj, pre, post
+        return BaseMessage()
 
-class JoinMessage(BaseMessage):
-    """ Prepares a JOIN packet.
+    @property
+    def msg_type(self):
+        return self.type
 
-    Users could be a part of multiple channels, so the JOIN command needs to
-    specify which channel to participate in.
+    @property
+    def msg_type_str(self):
+        return MessageType.LOOKUP[self.msg_type]
 
-    This merely contains the channel ID to join, and a representation of
-    ourselves as a user so that the channel owner knows who we are.
-    """
-    RAW_FORMAT = [
-        "%ds" % channel.CHANNEL_ID_LENGTH,
-                # unique channel ID
-        "I",    # length
-        "%ds",  # bytestream of the user
-    ]
-
-    def __init__(self, chan, user):
-        if not isinstance(chan, channel.ChannelID):
-            raise TypeError("Invalid type for channel!")
-        if not isinstance(user, str):
-            raise TypeError("Invalid type for user!")
-
-        self.pkt = CicadaMessage(MessageType.MSG_JOIN)
-        self.pkt.data = struct.pack("!%s" % (self.FORMAT % len(user)),
-                                    str(chan), len(user), user)
-        self.channel_id = chan
-        self.from_user = user
-
-    @classmethod
-    def unpack(cls, packet):
-        obj, pre, post = BaseMessage.unpack(packet)
-
-        offset = 0
-        getBlob = lambda i: CicadaMessage.extract_chunk(
-            cls.RAW_FORMAT[i], obj.data, offset)
-
-        chan_id, offset  = getBlob(0)
-        user_len, offset = getBlob(1)
-        user, offset     = CicadaMessage.extract_chunk(
-            cls.RAW_FORMAT[2] % user_len, obj.data, offset)
-
-        j = JoinMessage(channel.ChannelID(chan_id), user)
-        j.pkt = obj
-        j.from_user = user
-
-        return j, pre, post
-
-    def __str__(self):
-        return "<%s | id=%s>" % (MessageType.LOOKUP[self.pkt.type],
-            self.channel_id)
-
-class JoinAckMessage(BaseMessage):
-    """ Prepares a response to a JOIN packet.
-
-    This includes all relevant channel metadata associated with the ID:
-        - readable channel name
-        - current number of users, N
-        - random selection of log_2(N) neighbors
-
-    The user is the responsible for talking to these neighbors.
-    """
-    RAW_FORMAT = [
-        "%ds" % channel.CHANNEL_ID_LENGTH,
-                                    # unique channel ID
-        "H",                        # 2-byte name length, LEN
-        "%ds",                      # LEN-byte readable channel name
-        "I",                        # 4-byte user count
-        "H",                        # 2-byte neighbor count
-    ]
-
-    def __init__(self, channel_id, channel_name, user_count, neighbor_count):
-        if not isinstance(channel_id, channel.ChannelID):
-            raise TypeError("Channel ID is not an object.")
-
-        self.pkt = CicadaMessage(MessageType.MSG_JOIN_ACK)
-        self.pkt.data = struct.pack(
-            "!%s" % (self.FORMAT % len(channel_name)),
-            str(channel_id), len(channel_name), channel_name,
-            user_count, neighbor_count)
-
-        self.channel_id = channel_id
-        self.name = channel_name
-        self.users = user_count
-        self.neighbors = neighbor_count
-
-    @classmethod
-    def unpack(cls, packet):
-        obj, pre, post = CicadaMessage.unpack(packet)
-
-        offset = 0
-        getBlob = lambda i: CicadaMessage.extract_chunk(cls.RAW_FORMAT[i], obj.data, offset)
-
-        chan_id, offset  = getBlob(0)
-        name_len, offset = getBlob(1)
-        name, offset     = CicadaMessage.extract_chunk(cls.RAW_FORMAT[2] % name_len, obj.data, offset)
-        ucount, offset   = getBlob(3)
-        ncount, offset   = getBlob(4)
-
-        obj = JoinAckMessage(channel.ChannelID(chan_id), name, ucount, ncount)
-        return obj, pre, post
-
-    def __str__(self):
-        return "<%s \"%s\" | id=%s;u=%d/%d>" % (
-            MessageType.LOOKUP[self.pkt.type],
-            self.name, self.channel_id, self.users, self.neighbors)
-
-class FailMessage(BaseMessage):
-    """ Represents a generic failure message, containing details within it.
-
-    This saves the effort of having a unique failure format for each message
-    type. Instead, the failure message contains within it these details:
-        - Checksum of the message that triggered the failure.
-        - The severity of the failure (1=warning, 2=error, 3=fatal)
-        - An error message describing the failure.
-
-    On a fatal error, the connection will be closed.
-    """
-    RAW_FORMAT = [
-        "16s",  # 16-byte checksum of the message that caused the error
-        "b",    # 1-byte  severity
-        "I",    # 4-byte  length of the error message
-        "%ds",  # The error message
-    ]
-
-    def __init__(self, error_type, error_msg, cause, severity=2):
-        if not isinstance(cause.pkt, CicadaMessage) or \
-           not hasattr(cause.pkt, "checksum"):
-            raise TypeError("Cause must contain a valid packet.")
-
-        self.checksum = cause.pkt.checksum
-        self.error_msg = error_msg
-        self.severity = severity
-
-        self.pkt = CicadaMessage(error_type)
-        self.pkt.data = struct.pack('!' + self.FORMAT,
-            self.cause, self.severity,
-            len(self.error_msg), self.error_msg)
-
-    @classmethod
-    def unpack(cls, pkt):
-        obj, pre, post = CicadaMessage.unpack(pkt)
-
-        offset = 0
-        getBlob = lambda i: CicadaMessage.extract_chunk(
-            obj.data, cls.RAW_FORMAT[i], offset)
-
-        chk, offset = getBlob(0)
-        sev, offset = getBlob(1)
-        leg, offset = getBlob(2)
-        err, offset = CicadaMessage.extract_chunk(
-            obj.data, cls.RAW_FORMAT[3] % leg, offset)
-
-        return FailMessage(obj.type, err, chk, sev)
-
-    def __str__(self):
-        return "<FAIL | msg=%s>" % (self.error_msg)
 
 EXCEPTION_STRINGS = {
     ExceptionType.EXC_TOO_SHORT: ''.join([
