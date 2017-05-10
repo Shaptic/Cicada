@@ -1,17 +1,12 @@
 import threading
-import socket
 import select
+import socket
+import struct
+import random
 import time
 
-from chord    import utils
+from . import utils
 from protocol import message
-
-
-class protocol:
-    """ TODO: Move and formalize this.
-    """
-    MIN_MESSAGE_SIZE = 32
-    MESSAGE_END = "\r\n"
 
 
 class ReadQueue(object):
@@ -25,7 +20,8 @@ class ReadQueue(object):
     NOTE: Because of the way socket reads are handled, this code is definitely
           specific to Python 2.
     """
-    BUFFER_END_BYTES = struct.pack("!%s" % protocol.MESSAGE_END)
+    BUFFER_END_BYTES = struct.pack("!%ds" % len(message.MessageContainer.END),
+                                   message.MessageContainer.END)
 
     def __init__(self):
         self.queue = []
@@ -35,17 +31,17 @@ class ReadQueue(object):
         """ Processes some data into the queue.
         """
         self.pending += data
-        index = self.pending.find(BUFFER_END_BYTES)
+        index = self.pending.find(self.BUFFER_END_BYTES)
         if index == -1: return
 
         try:
             pkt = message.MessageContainer.unpack(self.pending)
             self.queue.append(pkt)
-            self.pending = self.pending[index + len(BUFFER_END_BYTES):])
+            self.pending = self.pending[index + len(self.BUFFER_END_BYTES):]
 
         except message.UnpackException, e:
-            print "Failed to parse incoming message:", message
-            MessageContainer.debug(self.pending)
+            print "Failed to parse incoming message:", repr(self.pending)
+            message.MessageContainer.debug_packet(self.pending)
             raise
 
     @property
@@ -169,9 +165,9 @@ class SocketProcessor(InfiniteThread):
         """ A one-way series of messages with increasing sequence numbers.
         """
         def __init__(self, request_handler, starting_seq=None):
-            super(MessageStream, self).__init__()
+            super(SocketProcessor.MessageStream, self).__init__()
 
-            self.base_seq = starting_seq or random.random(1, 2 ** 32 - 1)
+            self.base_seq = starting_seq or random.randint(1, 2 ** 32 - 1)
             self.current  = self.base_seq
 
             self.handler = request_handler
@@ -187,7 +183,8 @@ class SocketProcessor(InfiniteThread):
         def add_request(self, request, event):
             """ Triggers an event when a message receives a response.
             """
-            self.pending_requests.append(RequestResponse(request, event))
+            self.pending_requests.append(
+                SocketProcessor.RequestResponse(request, event))
 
     def __init__(self):
         """ Creates a thread instance.
@@ -215,7 +212,7 @@ class SocketProcessor(InfiniteThread):
         if not isinstance(peer_socket, socket.socket):
             raise TypeError("Initialized processor thread without socket.")
 
-        print "added %s to socket processing list" % repr(peer_socket.getpeername())
+        print "added %s to processing list" % repr(peer_socket.getpeername())
         self.sockets[peer_socket] = SocketProcessor.MessageStream(request_handler)
 
     def prepare_request(self, receiver, message, event):
@@ -243,7 +240,7 @@ class SocketProcessor(InfiniteThread):
 
         rd, _, er = select.select(socket_list, [], socket_list, 1)
         for sock in rd:
-            data = sock.recv(protocol.MIN_MESSAGE_SIZE)
+            data = sock.recv(message.MessageContainer.MIN_MESSAGE_LEN)
             if not data:
                 print "Socket is closed!"
                 continue
@@ -258,19 +255,22 @@ class SocketProcessor(InfiniteThread):
                 print "Full message received!", repr(msg)
 
                 for pair in stream.pending_requests:
-                    if pair.request.sequence == msg.sequence:
+                    if pair.request.seq == msg.seq:
                         pair.trigger(sock, msg)
                         break
                 else:
-                    entry.handler(sock, msg)
+                    stream.handler(sock, msg)
 
     def response(self, request, peer, response):
-        """ Sends a response to the given request.
+        """ Sends a response to the given peer, correlated with the request.
         """
-        response.set_request(request)
-        return peer.sendall(response.pack())
+        response.original = request
+        print "Sending response to message (%s): %s" % (request, response)
+        data = response.pack()
+        print "raw send data:", repr(data)
+        return peer.sendall(data)
 
-    def request(peer, message, on_response, wait_time=0):
+    def request(self, peer, message, on_response, wait_time=0):
         """ Initiates a request on a particular thread.
 
         :peer           the raw socket to send the message from
@@ -288,18 +288,19 @@ class SocketProcessor(InfiniteThread):
         evt = threading.Event()     # signaled when response is ready
 
         # Add this request to the current stream for the peer.
-        processor.prepare_request(peer, message, evt)
+        self.prepare_request(peer, message, evt)
 
         # Send the request and wait for the response.
         print "Sending message from %s to %s: %s" % (
             peer.getsockname(), peer.getpeername(), message)
 
         peer.sendall(message.pack())
-        entry = processor.sockets[peer]
+        entry = self.sockets[peer]
         if not evt.wait(timeout=wait_time):
             return False
 
-        print "Received response for message:", repr(entry.holds[-1].recv_message)
-
         # TODO: The -1 access is a race condition.
-        return on_response(peer, entry.holds[-1].recv_message)
+        print "Received response for message:", repr(
+            entry.pending_requests[-1].response)
+
+        return on_response(peer, entry.pending_requests[-1].response)

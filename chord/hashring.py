@@ -4,6 +4,10 @@ from . import search
 from . import utils
 
 def chord_hash(data):
+    import random, string
+    fake_hash = [ random.choice(string.letters) for _ in xrange(4) ]
+    random.shuffle(fake_hash)
+    return ''.join(fake_hash)[::-1]
     return hashlib.sha256(data).digest()
 
 BITCOUNT = len(chord_hash("0")) * 8
@@ -27,10 +31,19 @@ def pack_string(data):
 
     total = 0
     for i, c in enumerate(data):
-        total += ord(c) << (8 * i)
+        total += ord(c) << (8 * (len(data) - 1 - i))
 
     print "Hash for %s -- %d" % (repr(data), total)
     return total
+
+def unpack_string(val):
+    """ Turns a numeric value into a string by treating every byte as a char.
+    """
+    string = ""
+    while val > 0:
+        string += chr(val & 0xFF)
+        val >>= 8
+    return string[::-1]
 
 def khash(k):
     return (2 ** k) % HASHMOD

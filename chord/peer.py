@@ -79,8 +79,6 @@ class Peer(chordnode.ChordNode):
         self.remote_addr = remote_addr
         self.complete = False   # set when the socket closes
 
-        import pdb; pdb.set_trace()
-
         super(Peer, self).__init__("%s:%d" % remote_addr)
 
     def connect(self, processor):
