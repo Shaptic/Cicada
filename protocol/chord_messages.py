@@ -1,10 +1,9 @@
 import struct
 import collections
 
-from chord.hashring import BITCOUNT
-
-from . import message
-from . import utils
+from chord import hashring
+from .     import message
+from .     import utils
 
 
 class JoinRequest(message.BaseMessage):
@@ -15,13 +14,14 @@ class JoinRequest(message.BaseMessage):
     node.
     """
 
+    TYPE = message.MessageType.MSG_CH_JOIN
     RAW_FORMAT = [
         "I",    # IPv4 address
         "H",    # port
     ]
 
     def __init__(self, listener_addr):
-        super(JoinRequest, self).__init__(message.MessageType.MSG_CH_JOIN)
+        super(JoinRequest, self).__init__(self.TYPE)
 
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
@@ -67,6 +67,7 @@ class JoinResponse(message.BaseMessage):
         - The peer listener socket, for other nodes to join.
     """
 
+    TYPE = message.MessageType.MSG_CH_JOINR
     ENTRY_FORMAT = [
         "I",    # interval start
         "I",    # interval end
@@ -76,8 +77,8 @@ class JoinResponse(message.BaseMessage):
     ]
 
     RAW_FORMAT = [
-        "H",    # 2-byte hash length, in bytes, 32 for SHA256
-        "%ds" % (BITCOUNT / 8),
+        "H",    # hash length, in bytes (32 for SHA256)
+        "%ds" % (hashring.BITCOUNT / 8),
                 # SHA256 hash
         "I",    # listener ip
         "H",    # listener port
@@ -90,12 +91,21 @@ class JoinResponse(message.BaseMessage):
     FAKE_NODE = collections.namedtuple("Node", "local_addr hash")
 
     def __init__(self, node_hash, listener_addr, finger_table=[]):
+        """ Creates internal structures, including a fake finger table.
+
+        :node_hash      a string representing the hash bytes
+        :listener_addr  a 2-tuple address -- (IP, port) pair
+        :finger_table   a list of `chord.hashring.Finger`-like entries
+        """
         super(JoinResponse, self).__init__(message.MessageType.MSG_CH_JOINR)
 
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
-        assert len(node_hash) == (BITCOUNT / 8), "Invalid hash size."
+        if isinstance(node_hash, int):
+            node_hash = hashring.unpack_string(node_hash)
+
+        assert len(node_hash) == (hashring.BITCOUNT / 8), "Invalid hash size."
 
         self.node_hash = node_hash
         self.listener = listener_addr
@@ -105,7 +115,7 @@ class JoinResponse(message.BaseMessage):
                 entry.node.local_addr, entry.node.hash))
 
     def pack(self):
-        hash_bytes = BITCOUNT / 8
+        hash_bytes = hashring.BITCOUNT / 8
         entry_bytes = ''.join([
             struct.pack('!' + (''.join(self.ENTRY_FORMAT) % hash_bytes),
                 entry.start, entry.end, utils.ip_to_int(entry.addr[0]),
@@ -133,7 +143,7 @@ class JoinResponse(message.BaseMessage):
 
         offset = 0
         get = lambda idx: message.MessageContainer.extract_chunk(
-            self.ENTRY_FORMAT[idx], bytestream, offset)
+            cls.ENTRY_FORMAT[idx], bytestream, offset)
 
         fingers = []
         for i in xrange(finger_cnt):
@@ -141,8 +151,8 @@ class JoinResponse(message.BaseMessage):
             interval_ed, offset = get(1)
             node_ip,     offset = get(2)
             node_pt,     offset = get(3)
-            hash_val,    offset = message.MessageContainer.extract_chunk(
-                cls.ENTRY_FORMAT[4] % hash_length, bytestream, offset)
+            hash_val,    offset = int(message.MessageContainer.extract_chunk(
+                cls.ENTRY_FORMAT[4] % hash_length, bytestream, offset))
 
             node = cls.FAKE_NODE((utils.int_to_ip(node_ip), node_pt), hash_val)
             fingers.append(hashring.Finger(interval_st, interval_ed, node))
@@ -155,12 +165,33 @@ class JoinResponse(message.BaseMessage):
             self.msg_type_str, self.listener[0], self.listener[1],
             self.node_hash[:8], len(self.fingers))
 
+
+class Notify(message.BaseMessage):
+    RAW_FORMAT = []
+    pass
+
+
+class NotifyResponse(message.BaseMessage):
+    RAW_FORMAT = []
+    pass
+
+
+class Info(message.BaseMessage):
+    RAW_FORMAT = []
+    pass
+
+
+class InfoResponse(message.BaseMessage):
+    RAW_FORMAT = []
+    pass
+
+
 if __name__ == "__main__":
     j = JoinRequest(("127.0.0.1", 5000))
     print j, repr(j.pack())
     k = JoinRequest.unpack(j.pack())
     print k, repr(k.pack())
-    x = JoinResponse("a" * (BITCOUNT / 8), ("10.0.0.1", 6000))
+    x = JoinResponse("a" * (hashring.BITCOUNT / 8), ("10.0.0.1", 6000))
     print x, repr(x.pack())
     y = JoinResponse.unpack(x.pack())
     print y, repr(y.pack())

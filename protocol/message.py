@@ -5,18 +5,18 @@ import sys
 import md5
 import uuid
 import struct
+import collections
 
-import channel
-from   errors import ExceptionType
-from   chord import utils
-
+from .errors import ExceptionType
+from chord   import utils
 
 class MessageBlob:
     """ Describes a particular "chunk" in a message.
     """
-    MSG_HEADER  = 0
-    MSG_PAYLOAD = 1
-    MSG_END     = 2
+    MSG_HEADER      = 0     # used in all messages
+    MSG_RESPONSE    = 1     # only in responses, describes original request
+    MSG_PAYLOAD     = 2     # packet data
+    MSG_END         = 3     # suffix to indicate message termination
 
 
 class MessageType:
@@ -67,6 +67,10 @@ class UnpackException(Exception):
             EXCEPTION_STRINGS[exc_type] % args)
 
 
+# class ReplyingMessageContainer(MessageContainer):
+#     pass
+
+
 class MessageContainer(object):
     """ An abstraction of a raw packet in the Cicada protocol.
 
@@ -74,6 +78,7 @@ class MessageContainer(object):
     This object only provides easy access to header items and packing /
     unpacking of raw bytes.
     """
+    FAKE_RESP = collections.namedtuple("FakeResponse", "seq checksum")
 
     CHORD_PR  = "\x63\x68"      # ch
     CICADA_PR = "\x63\x69"      # ci
@@ -90,19 +95,24 @@ class MessageContainer(object):
             "I",    # payload length, P
             "B",    # quicker message type
         ],
+        MessageBlob.MSG_RESPONSE: [
+            "I",    # sequence number of request
+            "16s",  # checksum of request
+        ],
         MessageBlob.MSG_PAYLOAD: [
             "%ds",  # P-byte payload string, specific to the message type
         ],
         MessageBlob.MSG_END: [
             "B",    # byte-aligned padding length, Z
             "%ds",  # Z padding bytes
-            "3s"    # end-of-message
+            "3s",   # end-of-message
         ],
     }
     FORMATS  = {
-        MessageBlob.MSG_HEADER:  ''.join(RAW_FORMATS[MessageBlob.MSG_HEADER]),
-        MessageBlob.MSG_PAYLOAD: ''.join(RAW_FORMATS[MessageBlob.MSG_PAYLOAD]),
-        MessageBlob.MSG_END:     ''.join(RAW_FORMATS[MessageBlob.MSG_END]),
+        MessageBlob.MSG_HEADER:   ''.join(RAW_FORMATS[MessageBlob.MSG_HEADER]),
+        MessageBlob.MSG_RESPONSE: ''.join(RAW_FORMATS[MessageBlob.MSG_RESPONSE]),
+        MessageBlob.MSG_PAYLOAD:  ''.join(RAW_FORMATS[MessageBlob.MSG_PAYLOAD]),
+        MessageBlob.MSG_END:      ''.join(RAW_FORMATS[MessageBlob.MSG_END]),
     }
     DEBUG = {
         "B": "ubyte",
@@ -114,28 +124,35 @@ class MessageContainer(object):
         "(\d+)s": "\\1-byte str",
         "(\d+)b": "\\1-byte bts",
     }
-    HEADER_LEN = struct.calcsize('!' + (FORMATS[MessageBlob.MSG_HEADER]))
+    HEADER_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_HEADER])
+    RESPONSE_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_RESPONSE])
     SUFFIX_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END] % 0)
     MIN_MESSAGE_LEN = utils.nextmul(HEADER_LEN + SUFFIX_LEN, 8)
 
     @staticmethod
-    def quick_type(msg_type):
+    def quick_type_from_type(msg_type):
         if msg_type == MessageType.MSG_CH_ERROR:
             return QuickType.ERROR
-        elif msg_type % 2 == 0:
-            return QuickType.REQUEST
-        return QuickType.RESPONSE
+        elif msg_type % 2 == 0:     # even numbers are responses
+            return QuickType.RESPONSE
+        return QuickType.REQUEST
 
-    def __init__(self, msg_type, **kwargs):
+    def __init__(self, msg_type, data="", sequence=0, original=None):
         """ Prepares a packet.
 
         Data is not packaged in any special way; it is just shoved between the
         header and the suffix. The other message objects are responsible for
         packing the data in a specific way.
+
+        :msg_type
+        :data
+        :sequence
+        :original
         """
         self.type = msg_type
-        self.data = kwargs.get("data", "")
-        self.seq  = kwargs.get("sequence", 0)
+        self.data = data
+        self.seq  = sequence
+        self.original = original
 
     def pack(self):
         """ Packs the packet into a binary format for transfer.
@@ -144,11 +161,23 @@ class MessageContainer(object):
             '!' + self.FORMATS[MessageBlob.MSG_HEADER],
             self.protocol,
             self.VERSION,
-            self.type,
+            self.msg_type,
             self.seq,
             '\x00' * 16,
             len(self.data),
-            MessageContainer.quick_type(self.type))
+            self.quick_type)
+
+        if self.quick_type in (QuickType.RESPONSE, QuickType.ERROR):
+            assert self.original is not None, \
+                   "RESPONSE type, but what are we responding to?"
+
+            header += struct.pack(
+                '!' + self.FORMATS[MessageBlob.MSG_RESPONSE],
+                self.original.seq,
+                self.original.checksum)
+
+            self.HEADER_LEN = MessageContainer.HEADER_LEN + self.RESPONSE_LEN
+            assert len(header) == self.HEADER_LEN, "invalid header length?"
 
         padding = '\x00' * (self.length - self.raw_length)
         suffix = struct.pack(
@@ -194,31 +223,16 @@ class MessageContainer(object):
         if len(packet) < cls.MIN_MESSAGE_LEN:
             raise UnpackException(ExceptionType.EXC_TOO_SHORT, len(packet))
 
-        def getBlob(fmt, data, i):
-            """ Extracts a chunk `fmt` out of a packet `data` at index `i`.
-            """
-            blob_len = struct.calcsize('!' + fmt)
-            assert len(data[i:]) >= blob_len, "Invalid blob."
-            return (struct.unpack('!' + fmt, data[i : i + blob_len])[0],
-                    blob_len + i)
-
         ## Validate the header.
-        #
-        # We validate the protocol and version, making sure they match the ones
-        # we support. Then, we extract message type and store it; no validation
-        # is necessary. The length of both the message and the data are
-        # validated against the buffer size we've received. Finally, the
-        # checksum is validated.
-        #
         # TODO: Support multiple versions.
         header_fmt = cls.RAW_FORMATS[MessageBlob.MSG_HEADER]
         offset = 0
 
-        getBlob = lambda i: MessageContainer.extract_chunk(
+        get = lambda i: MessageContainer.extract_chunk(
             header_fmt[i], packet, offset)
 
-        protocol,  offset = getBlob(0)
-        version,   offset = getBlob(1)
+        protocol,  offset = get(0)
+        version,   offset = get(1)
 
         if protocol not in (cls.CICADA_PR, cls.CHORD_PR):
             raise UnpackException(ExceptionType.EXC_WRONG_PROTOCOL, protocol)
@@ -227,13 +241,27 @@ class MessageContainer(object):
             raise UnpackException(ExceptionType.EXC_WRONG_VERSION, version)
 
         # TODO: Ensure type matches protocol.
-        msgtype,   offset = getBlob(2)
-        seq_no,    offset = getBlob(3)
-        checksum,  offset = getBlob(4)
-        payload_sz,offset = getBlob(5)
-        quicktype, offset = getBlob(6)
+        msgtype,   offset = get(2)
+        seq_no,    offset = get(3)
+        checksum,  offset = get(4)
+        payload_sz,offset = get(5)
+        quicktype, offset = get(6)
 
-        total_len = utils.nextmul(cls.HEADER_LEN + payload_sz + cls.SUFFIX_LEN, 8)
+        resp = None
+        data_offset = cls.HEADER_LEN
+        total_len = data_offset + payload_sz + cls.SUFFIX_LEN
+
+        if quicktype in (QuickType.RESPONSE, QuickType.ERROR):
+            data_offset += cls.RESPONSE_LEN
+            total_len += cls.RESPONSE_LEN
+
+            get2 = lambda i: MessageContainer.extract_chunk(
+                cls.RAW_FORMATS[MessageBlob.MSG_RESPONSE][i], packet, offset)
+            seq, offset = get2(0)
+            chk, offset = get2(1)
+            resp = cls.FAKE_RESP(seq, chk)
+
+        total_len  = utils.nextmul(total_len, 8)
         if total_len != len(packet):
             raise UnpackException(ExceptionType.EXC_WRONG_LENGTH, total_len,
                                   len(packet))
@@ -247,10 +275,10 @@ class MessageContainer(object):
         # TODO: Data length validation.
         data, = struct.unpack(
             "!%ds" % payload_sz,
-            packet[start_i + cls.HEADER_LEN : \
-                   start_i + cls.HEADER_LEN + payload_sz])
+            packet[data_offset : data_offset + payload_sz])
 
-        cicada = MessageContainer(msgtype, data=data, sequence=seq_no)
+        cicada = MessageContainer(msgtype, data=data, sequence=seq_no,
+                                           original=resp)
 
         # Checksum validation.
         fake_packet = MessageContainer._inject_checksum(packet, '\x00' * 16)
@@ -262,8 +290,8 @@ class MessageContainer(object):
         print "Checksum:", cicada, repr(cicada.checksum)
         return cicada
 
-    @staticmethod
-    def debug_packet(self, data):
+    @classmethod
+    def debug_packet(cls, data):
         """ Inspects the format and dumps a readable packet representation.
 
         We have a format, as a list of `struct` specifiers, as well as a debug
@@ -271,19 +299,18 @@ class MessageContainer(object):
         equivalent.
         """
         import re
-        data = self.pack() if data is None else data
 
         # Stores a readable format string for each struct-format.
         results = []
 
         # Join all of the lists of each sector into one big list.
-        all_items = sum(self.RAW_FORMATS.values(), [])
+        all_items = sum(cls.RAW_FORMATS.values(), [])
 
         # Iterate over every struct-format in the packet.
         for item in all_items:
 
             # Iterate over every (match, readable) in the outputter.
-            for fmt, readable in self.DEBUG.iteritems():
+            for fmt, readable in cls.DEBUG.iteritems():
 
                 # If the match matches, replace the \1 with the real length
                 # if necessary, then add it to the list.
@@ -333,6 +360,10 @@ class MessageContainer(object):
     def msg_type(self):
         return self.type
 
+    @property
+    def quick_type(self):
+        return MessageContainer.quick_type_from_type(self.msg_type)
+
     @staticmethod
     def extract_chunk(fmt, data, i):
         """ Extracts a chunk `fmt` out of a packet `data` at index `i`.
@@ -349,7 +380,10 @@ class MessageContainer(object):
 
     def __repr__(self): return str(self)
     def __str__(self):
-        return "<%s | %d bytes>" % (MessageType.LOOKUP[self.type], self.length)
+        return "<%s | %d bytes%s>" % (
+            MessageType.LOOKUP[self.type], self.length,
+            "" if   self.quick_type not in (QuickType.RESPONSE,QuickType.ERROR)\
+               else (" | to=%d" % self.original.seq))
 
 
 class FormatMetaclass(type):
@@ -383,6 +417,10 @@ class BaseMessage(object):
             print len(pkt), "too short, need >=", cls.MESSAGE_SIZE
 
         return BaseMessage()
+
+    @classmethod
+    def make_packet(cls, *args, **kwargs):
+        return MessageContainer(cls.TYPE, data=cls(*args).pack(), **kwargs)
 
     @property
     def msg_type(self):
