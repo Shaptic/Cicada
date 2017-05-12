@@ -1,14 +1,17 @@
+""" A visual respresentation of a Chord system.
+"""
+
 import random
 import math
 
 import pygame
 
-from chord import localnode
-from chord import utils
+from chordlib import localnode
+from chordlib import utils
 
-class Visual_ChordNode(localnode.LocalChordNode):
+class VisualNode(localnode.LocalNode):
     def __init__(self, data):
-        super(Visual_ChordNode, self).__init__(data)
+        super(VisualNode, self).__init__(data)
         self.hashFont = pygame.font.SysFont("arial", 12)
         self.hashText = self.hashFont.render("%s" % str(self.hash)[:8], True, (0, 0, 0))
         self.entity   = pygame.Surface((16, 16))
@@ -131,7 +134,7 @@ if __name__ == "__main__":
     pygame.init()
     pygame.font.init()
 
-    ring = [ Visual_ChordNode(str(_)) for _ in xrange(18) ]
+    ring = [ VisualNode(str(_)) for _ in xrange(18) ]
 
     try:
         visuals(ring)
