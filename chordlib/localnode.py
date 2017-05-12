@@ -12,15 +12,15 @@ import select
 import random
 import time
 
-from . import utils
-from . import hashring
+from chordlib import utils as chutils
+from chordlib import fingertable
 
-from . import communication
-from . import chordnode
-from . import peer
+from chordlib import commlib
+from chordlib import chordnode
+from chordlib import remotenode
 
-from protocol import message
-from protocol import chord_messages
+import packetlib
+from   packetlib import chord as chordpkt
 
 class LocalChordNode(chordnode.ChordNode):
     """ Represents the current local node in the Chord hash ring.
@@ -41,7 +41,7 @@ class LocalChordNode(chordnode.ChordNode):
 
         # This socket is responsible for inbound connections (from new potential
         # Peer nodes). It is always in an "accept" state in a separate thread.
-        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener = packetlib.debug.LoggedSocket()
         self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener.bind(self.local_addr)
         self.listener.listen(5)
@@ -49,13 +49,13 @@ class LocalChordNode(chordnode.ChordNode):
         # This is the listener thread. When it receives a new socket, it will
         # create a Peer object from it.
         print "Starting listener thread for", self.listener.getsockname()
-        self.listen_thread = communication.ListenerThread(self.listener,
-                                                          self.on_new_peer)
+        self.listen_thread = commlib.ListenerThread(self.listener,
+                                                    self.on_new_peer)
         self.listen_thread.start()
 
         # This is a thread that processes all of the known peers for messages
         # and calls the appropriate message handler.
-        self.processor = communication.SocketProcessor()
+        self.processor = commlib.SocketProcessor()
         self.processor.start()
 
         # These are all of the known direct neighbors in the Chord ring.
@@ -89,7 +89,7 @@ class LocalChordNode(chordnode.ChordNode):
         #
 
         joiner_peer = self.add_peer(remote_address)
-        join_msg = chord_messages.JoinRequest.make_packet(self.local_addr)
+        join_msg = chordpkt.JoinRequest.make_packet(self.local_addr)
         if not self.processor.request(joiner_peer.peer_sock, join_msg,
                                       self.on_join_response, timeout):
             raise ValueError("JOIN request didn't get a response in time.")
@@ -99,7 +99,7 @@ class LocalChordNode(chordnode.ChordNode):
     def add_peer(self, peer_address, peer_socket=None):
         """ From an arbitrary remote address, add a Peer to the ring.
         """
-        p = peer.Peer(peer_address, existing_socket=peer_socket)
+        p = remotenode.RemoteNode(peer_address, existing_socket=peer_socket)
         self.peers.append(p)
         self.processor.add_socket(p.peer_sock,
                                   lambda s, msg: self.process(s, msg))
@@ -189,9 +189,9 @@ class LocalChordNode(chordnode.ChordNode):
             peer_socket.getsockname()[0], peer_socket.getsockname()[1])
 
         handlers = {
-            message.MessageType.MSG_CH_JOIN:  self.on_node_joined,
-            message.MessageType.MSG_CH_JOINR: self.on_join_response,
-            message.MessageType.MSG_CH_INFO:  self.on_info_request,
+            packetlib.MessageType.MSG_CH_JOIN:  self.on_node_joined,
+            packetlib.MessageType.MSG_CH_JOINR: self.on_join_response,
+            packetlib.MessageType.MSG_CH_INFO:  self.on_info_request,
         }
 
         for msg_type, func in handlers.iteritems():
@@ -212,8 +212,8 @@ class LocalChordNode(chordnode.ChordNode):
         else:
             pred_addr = self.predecessor.remote_addr
 
-        info_msg  = message.InfoRequest.unpack(msg.data)
-        infor_msg = message.InfoResponse.make_packet()
+        info_msg  = chordpkt.InfoRequest.unpack(msg.data)
+        infor_msg = chordpkt.InfoResponse.make_packet()
 
         self.pr("Responding to INFO with %s" % repr(infor_msg))
         self.processor.response(message, sock, infor_msg)
@@ -222,7 +222,7 @@ class LocalChordNode(chordnode.ChordNode):
     def on_join_response(self, sock, msg):
         """ Executed when an JOIN _response_ is received.
         """
-        joinr_msg = chord_messages.JoinResponse.unpack(msg.data)
+        joinr_msg = chordpkt.JoinResponse.unpack(msg.data)
 
         print "Our successor:", joinr_msg.listener
         try:
@@ -270,9 +270,9 @@ class LocalChordNode(chordnode.ChordNode):
             self.predecessor = p
 
         if self.successor is None:
-            response = chord_messages.JoinResponse.make_packet(0, (0, 0))
+            response = chordpkt.JoinResponse.make_packet(0, (0, 0))
         else:
-            response = chord_messages.JoinResponse.make_packet(
+            response = chordpkt.JoinResponse.make_packet(
                 self.successor.hash, self.successor.remote_addr,
                 original=msg)
 
@@ -293,7 +293,7 @@ class LocalChordNode(chordnode.ChordNode):
 
         assert self.predecessor != self, "notify: set self as predecessor!"
 
-        notify_msg = chord_messages.NotifyResponse.make_packet(
+        notify_msg = chordpkt.NotifyResponse.make_packet(
             self.hash, self.successor.remote_addr,
             self.predecessor.remote_addr)
 

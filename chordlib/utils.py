@@ -48,7 +48,7 @@ def find_last(string, char, start=0):
     return index
 
 def nextmul(n, rd=8):
-    """ Rounds a value up to its nearest multiple of 8. power of two.
+    """ Rounds a value up to its nearest multiple of 8.
 
     >>> next_po2(7), next_po2(8), next_po2(9)
     (8, 8, 16)

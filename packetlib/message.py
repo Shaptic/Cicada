@@ -7,8 +7,9 @@ import uuid
 import struct
 import collections
 
-from .errors import ExceptionType
-from chord   import utils
+from packetlib.errors import ExceptionType
+from chordlib         import utils as chutils
+
 
 class MessageBlob:
     """ Describes a particular "chunk" in a message.
@@ -127,7 +128,7 @@ class MessageContainer(object):
     HEADER_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_HEADER])
     RESPONSE_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_RESPONSE])
     SUFFIX_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END] % 0)
-    MIN_MESSAGE_LEN = utils.nextmul(HEADER_LEN + SUFFIX_LEN, 8)
+    MIN_MESSAGE_LEN = chutils.nextmul(HEADER_LEN + SUFFIX_LEN, 8)
 
     @staticmethod
     def quick_type_from_type(msg_type):
@@ -261,7 +262,7 @@ class MessageContainer(object):
             chk, offset = get2(1)
             resp = cls.FAKE_RESP(seq, chk)
 
-        total_len  = utils.nextmul(total_len, 8)
+        total_len  = chutils.nextmul(total_len, 8)
         if total_len != len(packet):
             raise UnpackException(ExceptionType.EXC_WRONG_LENGTH, total_len,
                                   len(packet))
@@ -348,7 +349,7 @@ class MessageContainer(object):
 
     @property
     def length(self):
-        return utils.nextmul(self.raw_length, 8)
+        return chutils.nextmul(self.raw_length, 8)
 
     @property
     def protocol(self):

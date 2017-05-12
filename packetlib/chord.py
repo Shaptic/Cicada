@@ -1,9 +1,9 @@
 import struct
 import collections
 
-from chord import hashring
-from .     import message
-from .     import utils
+from chordlib  import fingertable
+from packetlib import message
+from packetlib import utils as pktutils
 
 
 class JoinRequest(message.BaseMessage):
@@ -26,7 +26,7 @@ class JoinRequest(message.BaseMessage):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
-        self.address = utils.ip_to_int(listener_addr[0])
+        self.address = pktutils.ip_to_int(listener_addr[0])
         self.port = listener_addr[1]
 
     def pack(self):
@@ -41,12 +41,12 @@ class JoinRequest(message.BaseMessage):
         ip, offset  = get(0)
         port, offset = get(1)
 
-        j = JoinRequest((utils.int_to_ip(ip), port))
+        j = JoinRequest((pktutils.int_to_ip(ip), port))
         return j
 
     @property
     def ip(self):
-        return utils.int_to_ip(self.address)
+        return pktutils.int_to_ip(self.address)
 
     def __str__(self):
         return "<%s | listen=%s:%d>" % (self.msg_type_str, self.ip, self.port)
@@ -78,7 +78,7 @@ class JoinResponse(message.BaseMessage):
 
     RAW_FORMAT = [
         "H",    # hash length, in bytes (32 for SHA256)
-        "%ds" % (hashring.BITCOUNT / 8),
+        "%ds" % (fingertable.BITCOUNT / 8),
                 # SHA256 hash
         "I",    # listener ip
         "H",    # listener port
@@ -95,7 +95,7 @@ class JoinResponse(message.BaseMessage):
 
         :node_hash      a string representing the hash bytes
         :listener_addr  a 2-tuple address -- (IP, port) pair
-        :finger_table   a list of `chord.hashring.Finger`-like entries
+        :finger_table   a list of `chordlib.fingertable.Finger`-like entries
         """
         super(JoinResponse, self).__init__(message.MessageType.MSG_CH_JOINR)
 
@@ -103,9 +103,9 @@ class JoinResponse(message.BaseMessage):
             raise TypeError("Please pass a two-tuple address!")
 
         if isinstance(node_hash, int):
-            node_hash = hashring.unpack_string(node_hash)
+            node_hash = fingertable.unpack_string(node_hash)
 
-        assert len(node_hash) == (hashring.BITCOUNT / 8), "Invalid hash size."
+        assert len(node_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
 
         self.node_hash = node_hash
         self.listener = listener_addr
@@ -115,16 +115,16 @@ class JoinResponse(message.BaseMessage):
                 entry.node.local_addr, entry.node.hash))
 
     def pack(self):
-        hash_bytes = hashring.BITCOUNT / 8
+        hash_bytes = fingertable.BITCOUNT / 8
         entry_bytes = ''.join([
             struct.pack('!' + (''.join(self.ENTRY_FORMAT) % hash_bytes),
-                entry.start, entry.end, utils.ip_to_int(entry.addr[0]),
+                entry.start, entry.end, pktutils.ip_to_int(entry.addr[0]),
                 entry.addr[1], entry.hash
             ) for entry in self.fingers
         ])
 
         pkt = struct.pack('!' + (self.FORMAT % len(entry_bytes)),
-            hash_bytes, self.node_hash, utils.ip_to_int(self.listener[0]),
+            hash_bytes, self.node_hash, pktutils.ip_to_int(self.listener[0]),
             self.listener[1], len(self.fingers), entry_bytes)
 
         return pkt
@@ -154,10 +154,10 @@ class JoinResponse(message.BaseMessage):
             hash_val,    offset = int(message.MessageContainer.extract_chunk(
                 cls.ENTRY_FORMAT[4] % hash_length, bytestream, offset))
 
-            node = cls.FAKE_NODE((utils.int_to_ip(node_ip), node_pt), hash_val)
-            fingers.append(hashring.Finger(interval_st, interval_ed, node))
+            node = cls.FAKE_NODE((pktutils.int_to_ip(node_ip), node_pt), hash_val)
+            fingers.append(fingertable.Finger(interval_st, interval_ed, node))
 
-        return JoinResponse(hash_value, (utils.int_to_ip(listener_ip),
+        return JoinResponse(hash_value, (pktutils.int_to_ip(listener_ip),
                             listener_pt), fingers)
 
     def __str__(self):
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     print j, repr(j.pack())
     k = JoinRequest.unpack(j.pack())
     print k, repr(k.pack())
-    x = JoinResponse("a" * (hashring.BITCOUNT / 8), ("10.0.0.1", 6000))
+    x = JoinResponse("a" * (fingertable.BITCOUNT / 8), ("10.0.0.1", 6000))
     print x, repr(x.pack())
     y = JoinResponse.unpack(x.pack())
     print y, repr(y.pack())

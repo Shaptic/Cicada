@@ -5,9 +5,8 @@ import struct
 import random
 import time
 
-from . import utils
-from protocol import message
-
+import chordlib.utils   as     chutils
+from   packetlib        import message
 
 class ReadQueue(object):
     """ A queue that combines incoming packets until a complete one is found.

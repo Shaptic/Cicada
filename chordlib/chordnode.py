@@ -1,16 +1,17 @@
 """ Outlines a base class for a Chord node object.
 """
+
 import threading
 import socket
 import random
 import time
 
-from . import communication
-from . import hashring
-from . import utils
+from chordlib import commlib
+from chordlib import fingertable
+from chordlib import utils as chutils
 
 
-class Stabilizer(communication.InfiniteThread):
+class Stabilizer(commlib.InfiniteThread):
     """ Performs the Chord stabilization algorithm on a particular node. """
     def __init__(self, node):
         super(Stabilizer, self).__init__()
@@ -39,9 +40,9 @@ class ChordNode(object):
         # an empty finger table (save themselves) and no predecessor reference.
         #
         self.data = data
-        self.hash = hashring.pack_string(hashring.chord_hash(data))
+        self.hash = fingertable.pack_string(fingertable.chord_hash(data))
         self.predecessor = None
-        self.fingers = hashring.FingerTable(self)
+        self.fingers = fingertable.FingerTable(self)
         self.stable = Stabilizer(self)
         self.stable.start()
 
@@ -58,7 +59,7 @@ class ChordNode(object):
         raise NotImplementedError
 
     def finger(self, i):
-        assert len(self.fingers) <= hashring.BITCOUNT, "Finger table too long!"
+        assert len(self.fingers) <= fingertable.BITCOUNT, "Finger table too long!"
         return self.fingers.finger(i)
 
     def pr(self, *args):
@@ -76,3 +77,22 @@ class ChordNode(object):
     def __str__(self):  return "%s,pred=%s>" % (
         self.norecstr()[:-1],
         self.predecessor.norecstr() if self.predecessor is not None else "None")
+
+
+def walk_ring(root, maxcount=10):
+    count = 0
+    start = root
+    next_node = start.successor
+
+    yield start
+    while next_node is not None and \
+          root != next_node and \
+          count < maxcount:   # so we don't do it too much if there's an error
+        yield next_node
+        nextOne = next_node.successor
+        count += 1
+
+
+def print_ring(root):
+    for node in walk_ring(root):
+        print node

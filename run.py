@@ -1,8 +1,9 @@
 #!/usr/bin/env python2
+import sys
 import time
 
-from chord import localnode
-from chord import chord
+import chordlib.localnode
+import chordlib.utils as chutils
 
 def main(host_address, join_address=None):
     """ Executes a normal Chord workflow.
@@ -27,8 +28,8 @@ def main(host_address, join_address=None):
     """
 
     print "main(%s, %s)" % (host_address, join_address)
-    root = localnode.LocalChordNode("%s:%d" % host_address,
-                                    bind_addr=host_address)
+    root = chordlib.localnode.LocalChordNode("%s:%d" % host_address,
+                                             bind_addr=host_address)
 
     if join_address is not None:
         root.join_ring(join_address)
@@ -41,45 +42,9 @@ def main(host_address, join_address=None):
             print "join node:", root.peers
             print "join fing:", root.peers[0].fingers
 
-    return
-
-    # Establish a list of independent nodes.
-    ring = chord.main()
-    print '\n'.join([ str(x) for x in ring ])
-    print
-
-    # We pick an arbitrary node to start the ring with: the first node.
-    root = ring[0]
-    print "Root:"
-    print root
-    print root.fingers
-    print
-
-    # We join a single node to the ring.
-    try:
-        first = ring[1]
-        first.join_ring(root.local_addr)
-        print "Joined %s to the ring." % first
-
-        # What is the result?
-        print "Root and its fingers"
-        print root
-        print root.fingers
-        print "Joiner and its fingers"
-        print first
-        print first.fingers
-
-    except Exception, e:
-        import traceback
-        import sys
-        trace = traceback.format_exc(sys.exc_info())
-        print trace
-
-    finally:
-        return ring
+    return (root, )
 
 if __name__ == "__main__":
-    import sys
     client = None
     ip, port = sys.argv[1], sys.argv[2]
     if len(sys.argv) > 3:

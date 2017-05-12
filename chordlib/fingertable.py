@@ -1,7 +1,11 @@
+""" Defines hashing functions and the Chord finger table.
+"""
+
 import hashlib
 
-from . import search
-from . import utils
+from chordlib import search
+from chordlib import utils
+
 
 def chord_hash(data):
     import random, string
@@ -10,8 +14,10 @@ def chord_hash(data):
     return ''.join(fake_hash)[::-1]
     return hashlib.sha256(data).digest()
 
+
 BITCOUNT = len(chord_hash("0")) * 8
 HASHMOD  = 2 ** BITCOUNT
+
 
 def pack_string(data):
     """ Turns a string into its unique numeric representation.
@@ -36,6 +42,7 @@ def pack_string(data):
     print "Hash for %s -- %d" % (repr(data), total)
     return total
 
+
 def unpack_string(val):
     """ Turns a numeric value into a string by treating every byte as a char.
     """
@@ -45,8 +52,10 @@ def unpack_string(val):
         val >>= 8
     return string[::-1]
 
+
 def khash(k):
     return (2 ** k) % HASHMOD
+
 
 def moddist(a, b, m=HASHMOD):
     """ Finds the distance FROM a TO b in a modulo ring of size m. """

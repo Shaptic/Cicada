@@ -1,8 +1,8 @@
 """ Defines the binding layer between local and remote nodes.
 
-The machine on which the node is running has a `LocalChordNode` instance. All of
-its peers are `RemoteChordNode` instances which actually correspond to the
-respective `LocalChordNode` instance.
+The machine on which the node is running has a `LocalNode` instance. All of
+its peers are `RemoteNode` instances which actually correspond to the
+respective `LocalNode` instance.
 
 Essentially, communication is established LocalNode's peer list (which is a list
 of RemoteNode instances) and another LocalNode's (which is actually running on
@@ -24,18 +24,18 @@ ring, from both local and remote perspectives:
     - Node A: RNode B -- UPDATE --> RNode A on Node B.
 
 It's a bit confusing, as is often the case with networks, but you can always
-just consider that LocalNode.Peers[index_1], a Remote node, has a socket that is
-a direct communication line to another LocalNode.Peers[index_2] socket instance
+just consider that LocalNode.peers[index_1], a Remote node, has a socket that is
+a direct communication line to another LocalNode.peers[index_2] socket instance
 that exists elsewhere.
 """
 
 import select
 import socket
-import communication
 
-from . import chordnode
-from .message import *
-from protocl import message
+from   chordlib  import commlib
+from   chordlib  import chordnode
+from   packetlib import chord
+import packetlib.debug
 
 def parse_successor(data):
     index = data.find("NONE")
@@ -44,7 +44,7 @@ def parse_successor(data):
     return "NONE"
 
 
-class Peer(chordnode.ChordNode):
+class RemoteNode(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
 
     The primary purpose of this object is to handle communication from a local
@@ -72,50 +72,14 @@ class Peer(chordnode.ChordNode):
         if existing_socket is not None:
             s = existing_socket
         else:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s = packetlib.debug.LoggedSocket()
             s.connect(remote_addr)
 
         self.peer_sock = s
         self.remote_addr = remote_addr
         self.complete = False   # set when the socket closes
 
-        super(Peer, self).__init__("%s:%d" % remote_addr)
-
-    def connect(self, processor):
-        """ Joins a Chord ring by sending a JOIN message.
-
-        The return value is either an error or a message describing the
-        successor of this node. The message also implicitly notifies the node
-        that we're joining of our existence.
-        """
-        # This will be done using a proper protocol soon.
-        self.pr("Waiting on JOIN response...")
-        processor.request(processor, JoinMessage().build_request(), 10,
-                          self.responder)
-
-    def responder(self, response):
-        if response.build_request() != "JOIN\r\n":
-            print "wrong request type. sent"
-            print response.sent_message
-            print "got"
-            print response.recv_message
-            raise ValueError("Invalid format! %s" % repr(response.__dict__))
-
-        # The socket will return the successor node corresponding to
-        # this node. Thus, we create a new Peer node that represents
-        # this successor and return it.
-        #
-        # The peer is represented just by a remote address, which we
-        # parse. If it doesn't exist, we just use the address we used to
-        # connect to the ring, instead.
-        self.pr("Joiner got response:", response.recv_message)
-        join_response = JoinMessage().parse_response(response.recv_message)
-        if join_response.succ_addr:     # our homie is the only node!
-            addr = self.remote_addr
-
-        # Join the successor.
-        print "connected peer is at", join_response.succ_addr
-        return Peer(join_response.succ_addr)
+        super(RemoteNode, self).__init__("%s:%d" % remote_addr)
 
     def stabilize(self):
         return
@@ -130,7 +94,7 @@ class Peer(chordnode.ChordNode):
         data = self.peer_sock.recv(64)
 
     def __str__(self):
-        return "<Peer | %s>" % super(Peer, self).__str__()
+        return "<RemoteNode | %s>" % super(RemoteNode, self).__str__()
 
     def get_predecessor(self):
         # TODO: Set me properly.
