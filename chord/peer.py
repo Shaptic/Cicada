@@ -35,7 +35,7 @@ import communication
 
 from . import chordnode
 from .message import *
-
+from protocl import message
 
 def parse_successor(data):
     index = data.find("NONE")
@@ -69,7 +69,7 @@ class Peer(chordnode.ChordNode):
             raise TypeError("Must join ring via address pair, got %s!" % (
                 remote_addr))
 
-        if existing_socket:
+        if existing_socket is not None:
             s = existing_socket
         else:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

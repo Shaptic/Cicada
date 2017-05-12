@@ -225,7 +225,11 @@ class LocalChordNode(chordnode.ChordNode):
         joinr_msg = chord_messages.JoinResponse.unpack(msg.data)
 
         print "Our successor:", joinr_msg.listener
-        successor_peer = self.add_peer(joinr_msg.listener)
+        try:
+            successor_peer = self.add_peer(joinr_msg.listener)
+        except:
+            pass
+        return True
 
         # TODO NEXT TIME:
         # We need to send the proper successor address that we can properly

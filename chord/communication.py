@@ -255,7 +255,7 @@ class SocketProcessor(InfiniteThread):
                 print "Full message received!", repr(msg)
 
                 for pair in stream.pending_requests:
-                    if pair.request.seq == msg.seq:
+                    if pair.request.seq == msg.original.seq:
                         pair.trigger(sock, msg)
                         break
                 else:
