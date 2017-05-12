@@ -57,13 +57,17 @@ class RemoteNode(chordnode.ChordNode):
     actual network communication to fetch it.
     """
 
-    def __init__(self, remote_addr, existing_socket=None):
+    def __init__(self, remote_addr, peer_listener_addr, existing_socket=None):
         """ Establishes a connection to a remote node.
 
-        The address is the receiving end of the socket of the `LocalChordNode`
+        The address is the receiving end of the socket of the `LocalNode`
         that we're connecting to.
 
         If `existing_socket` exists, there is no connection initiated.
+
+        :remote_addr
+        :peer_listener_addr
+        :existing_socket
         """
         if not isinstance(remote_addr, tuple):
             raise TypeError("Must join ring via address pair, got %s!" % (
@@ -79,7 +83,8 @@ class RemoteNode(chordnode.ChordNode):
         self.remote_addr = remote_addr
         self.complete = False   # set when the socket closes
 
-        super(RemoteNode, self).__init__("%s:%d" % remote_addr)
+        super(RemoteNode, self).__init__(
+            "%s:%d" % remote_addr, peer_listener_addr)
 
     def stabilize(self):
         return

@@ -18,8 +18,6 @@ class Stabilizer(commlib.InfiniteThread):
         self.node = node
 
     def _loop_method(self):
-        # print "'THREAD: Stabilizing for:'"
-        # print "'THREAD:", self.node, "'"
         self.node.stabilize()
         self.node.fix_fingers()
         time.sleep(random.randint(3, 8))
@@ -33,7 +31,7 @@ class ChordNode(object):
     we throw errors on those.
     """
 
-    def __init__(self, data):
+    def __init__(self, data, listener_addr):
         super(ChordNode, self).__init__()
         #
         # All Chord nodes exist in their own "ring" on initialization. They have
@@ -45,13 +43,11 @@ class ChordNode(object):
         self.fingers = fingertable.FingerTable(self)
         self.stable = Stabilizer(self)
         self.stable.start()
+        self.local_addr = (socket.gethostbyname(listener_addr[0]),
+                           listener_addr[1])
 
     def join_ring(self, address):
         """ Joins a Chord ring via a node in the ring. """
-        raise NotImplementedError
-
-    def node_joined(self, node):
-        """ Receives a join from a node outside of the ring. """
         raise NotImplementedError
 
     def stabilize(self):

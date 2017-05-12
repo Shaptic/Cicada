@@ -21,11 +21,10 @@ class JoinRequest(message.BaseMessage):
     ]
 
     def __init__(self, listener_addr):
-        super(JoinRequest, self).__init__(self.TYPE)
-
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
+        super(JoinRequest, self).__init__(self.TYPE)
         self.address = pktutils.ip_to_int(listener_addr[0])
         self.port = listener_addr[1]
 
@@ -45,11 +44,12 @@ class JoinRequest(message.BaseMessage):
         return j
 
     @property
-    def ip(self):
-        return pktutils.int_to_ip(self.address)
+    def listener(self):
+        return (pktutils.int_to_ip(self.address), self.port)
 
     def __str__(self):
-        return "<%s | listen=%s:%d>" % (self.msg_type_str, self.ip, self.port)
+        return "<%s | listen=%s:%d>" % (self.msg_type_str,
+            self.listener[0], self.listener[1])
 
 
 class JoinResponse(message.BaseMessage):
@@ -108,7 +108,9 @@ class JoinResponse(message.BaseMessage):
         assert len(node_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
 
         self.node_hash = node_hash
-        self.listener = listener_addr
+        self.address = pktutils.ip_to_int(listener_addr[0])
+        self.port = listener_addr[1]
+
         self.fingers = []
         for entry in finger_table:
             self.fingers.append(self.ENTRY(entry.start, entry.end,
@@ -124,7 +126,8 @@ class JoinResponse(message.BaseMessage):
         ])
 
         pkt = struct.pack('!' + (self.FORMAT % len(entry_bytes)),
-            hash_bytes, self.node_hash, pktutils.ip_to_int(self.listener[0]),
+            hash_bytes, self.node_hash, pktutils.ip_to_int(self.listener[0]) \
+                if not isinstance(self.listener[0], int) else self.listener[0],
             self.listener[1], len(self.fingers), entry_bytes)
 
         return pkt
@@ -157,13 +160,30 @@ class JoinResponse(message.BaseMessage):
             node = cls.FAKE_NODE((pktutils.int_to_ip(node_ip), node_pt), hash_val)
             fingers.append(fingertable.Finger(interval_st, interval_ed, node))
 
-        return JoinResponse(hash_value, (pktutils.int_to_ip(listener_ip),
-                            listener_pt), fingers)
+        return JoinResponse(hash_value, (
+                                pktutils.int_to_ip(listener_ip),
+                                listener_pt
+                            ), fingers)
+
+    @property
+    def listener(self):
+        return (pktutils.int_to_ip(self.address), self.port)
+
 
     def __str__(self):
         return "<%s | Node (%s:%d),hash=%s,fingers=%d>" % (
             self.msg_type_str, self.listener[0], self.listener[1],
             self.node_hash[:8], len(self.fingers))
+
+
+class InfoRequest(message.BaseMessage):
+    RAW_FORMAT = []
+    TYPE = message.MessageType.MSG_CH_INFO
+
+
+class InfoResponse(JoinResponse):
+    RAW_FORMAT = JoinResponse.RAW_FORMAT
+    TYPE = message.MessageType.MSG_CH_INFOR
 
 
 class Notify(message.BaseMessage):
@@ -172,16 +192,6 @@ class Notify(message.BaseMessage):
 
 
 class NotifyResponse(message.BaseMessage):
-    RAW_FORMAT = []
-    pass
-
-
-class Info(message.BaseMessage):
-    RAW_FORMAT = []
-    pass
-
-
-class InfoResponse(message.BaseMessage):
     RAW_FORMAT = []
     pass
 

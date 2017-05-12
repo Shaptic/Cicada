@@ -239,9 +239,16 @@ class SocketProcessor(InfiniteThread):
 
         rd, _, er = select.select(socket_list, [], socket_list, 1)
         for sock in rd:
-            data = sock.recv(message.MessageContainer.MIN_MESSAGE_LEN)
-            if not data:
-                print "Socket is closed!"
+            try:
+                data = sock.recv(message.MessageContainer.MIN_MESSAGE_LEN)
+                if not data:
+                    print "Socket is closed!"
+                    self.sockets.pop(sock)
+                    continue
+
+            except socket.error, e:
+                print "Socket errored out:", str(e)
+                self.sockets.pop(sock)
                 continue
 
             print "received raw message from %s: %s" % (
@@ -260,11 +267,10 @@ class SocketProcessor(InfiniteThread):
                 else:
                     stream.handler(sock, msg)
 
-    def response(self, request, peer, response):
+    def response(self, peer, response):
         """ Sends a response to the given peer, correlated with the request.
         """
-        response.original = request
-        print "Sending response to message (%s): %s" % (request, response)
+        print "Sending response to message: %s" % response
         data = response.pack()
         print "raw send data:", repr(data)
         return peer.sendall(data)

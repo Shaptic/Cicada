@@ -28,14 +28,14 @@ def main(host_address, join_address=None):
     """
 
     print "main(%s, %s)" % (host_address, join_address)
-    root = chordlib.localnode.LocalChordNode("%s:%d" % host_address,
-                                             bind_addr=host_address)
+    root = chordlib.localnode.LocalNode("%s:%d" % host_address,
+                                        bind_addr=host_address)
 
     if join_address is not None:
         root.join_ring(join_address)
 
     while True:
-        time.sleep(15)
+        time.sleep(360)
         print "root node:", root
         print "root fing:", root.fingers
         if join_address is not None:

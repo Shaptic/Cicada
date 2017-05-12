@@ -91,7 +91,7 @@ def visuals(ring):
 
                     else:
                         import pdb; pdb.set_trace()
-                        collider.joinRing(selected_node)
+                        collider.join_ring(selected_node)
 
         window.fill((255, 255, 255))
         for dot in ring:
