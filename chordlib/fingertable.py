@@ -4,7 +4,7 @@
 import hashlib
 
 from chordlib import search
-from chordlib import utils
+from chordlib import utils, L
 
 
 def chord_hash(data):
@@ -39,7 +39,7 @@ def pack_string(data):
     for i, c in enumerate(data):
         total += ord(c) << (8 * (len(data) - 1 - i))
 
-    print "Hash for %s -- %d" % (repr(data), total)
+    L.debug("Hash for %s -- %d", repr(data), total)
     return total
 
 

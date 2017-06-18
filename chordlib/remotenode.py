@@ -86,12 +86,6 @@ class RemoteNode(chordnode.ChordNode):
         super(RemoteNode, self).__init__(
             "%s:%d" % remote_addr, peer_listener_addr)
 
-    def stabilize(self):
-        return
-
-    def fix_fingers(self):
-        return
-
     def notify(self, local_node):
         """ The given `local_node` is notifying this peer of its existence.
         """
@@ -101,22 +95,3 @@ class RemoteNode(chordnode.ChordNode):
     def __str__(self):
         return "<RemoteNode | %s>" % super(RemoteNode, self).__str__()
 
-    def get_predecessor(self):
-        # TODO: Set me properly.
-        self._pred_expired = False
-        if self.predecessor is not None or self._pred_expired:
-            return self.predecessor
-
-        # import pdb; pdb.set_trace()
-        self.peer_sock.sendall("INFO\r\n")
-        data = self.peer_sock.recv(64)
-        self.pr("INFO response: %s" % repr(data))
-
-        msg = data[len("INFO-R:"):]
-        pred, succ = msg.split('|')
-        self.pr("info data: hash=%s,pred=%s,succ=%s" % (repr(pred), repr(succ)))
-
-        pred = pred.split(',')
-        succ = succ.split(',')
-
-        return pred

@@ -6,6 +6,7 @@ import random
 import time
 
 import chordlib.utils   as     chutils
+from   chordlib         import L
 from   packetlib        import message
 
 class ReadQueue(object):
@@ -39,7 +40,7 @@ class ReadQueue(object):
             self.pending = self.pending[index + len(self.BUFFER_END_BYTES):]
 
         except message.UnpackException, e:
-            print "Failed to parse incoming message:", repr(self.pending)
+            L.error("Failed to parse incoming message: %s", repr(self.pending))
             message.MessageContainer.debug_packet(self.pending)
             raise
 
@@ -57,8 +58,8 @@ class SignalableThread(threading.Thread):
     """ A utility base thread to run a signal function when something happens.
     """
 
-    def __init__(self, on_ready):
-        super(SignalableThread, self).__init__()
+    def __init__(self, on_ready, **kwargs):
+        super(SignalableThread, self).__init__(**kwargs)
         self.handler = on_ready
 
     def signal(self):
@@ -81,8 +82,8 @@ class InfiniteThread(threading.Thread):
     1
     """
 
-    def __init__(self, pause_length=0):
-        super(InfiniteThread, self).__init__()
+    def __init__(self, pause_length=0, **kwargs):
+        super(InfiniteThread, self).__init__(**kwargs)
         self.sleep = pause_length
         self.running = True
         self.setDaemon(True)
@@ -116,7 +117,7 @@ class ListenerThread(InfiniteThread):
         :on_accept  A callable handler that is called when clients connect.
                         on_accept(client_address, client_socket)
         """
-        super(ListenerThread, self).__init__()
+        super(ListenerThread, self).__init__(name="ListenerThread")
         self._on_accept = on_accept
         self.listener = sock
 
@@ -125,11 +126,11 @@ class ListenerThread(InfiniteThread):
                                    ListenerThread.TIMEOUT)
         if rd:
             client, addr = self.listener.accept()
-            print "Accepted peer from", addr
+            L.info("Accepted peer: %s:%d", addr[0], addr[1])
             self._on_accept(addr, client)
 
         elif er:
-            print "An error occurred in the socket."
+            L.error("An error occurred on the listener socket.")
             self.stop_running()
 
 
@@ -185,34 +186,43 @@ class SocketProcessor(InfiniteThread):
             self.pending_requests.append(
                 SocketProcessor.RequestResponse(request, event))
 
-    def __init__(self):
+    def __init__(self, on_error):
         """ Creates a thread instance.
 
         This manages a set of sockets with particular _generic_ request handler
         functions for each one. These will be called for all messages
         indiscriminantly if there is no handler for a request you sent.
+
+        :on_error   A generic handler that will be called whenever a socket
+                    errors out or is closed. Called like so:
+
+                on_error(socket_erroring_out, graceful=True|False)
+
+            Where `graceful` indicates whether it was a cleanly-closed socket
+            (that is, no data was received) or if it was an exception thrown.
         """
         super(SocketProcessor, self).__init__()
 
-        # dict -> { socket: SocketStream }
+        # dict -> { socket: MessageStream }
         self.sockets = { }
+        self.on_error = on_error
 
-    def add_socket(self, peer_socket, request_handler):
+    def add_socket(self, peer_socket, on_request):
         """ Adds a new socket to manage.
 
-        :peer_socket        A socket object to read from.
-        :request_handler    A function that accepts and processes a generic
-                            message on the socket.
+        :peer_socket    A socket object to read from.
+        :on_request     A function that accepts and processes a generic
+                        message on the socket.
 
             This is called when data is received but there is no expecting
             handler. It is called with these args:
-                request_handler(socket_received_on, raw_data_received)
+                on_request(socket_received_on, raw_data_received)
         """
         if not isinstance(peer_socket, socket.socket):
             raise TypeError("Initialized processor thread without socket.")
 
-        print "added %s to processing list" % repr(peer_socket.getpeername())
-        self.sockets[peer_socket] = SocketProcessor.MessageStream(request_handler)
+        L.debug("Added %s to processing list", repr(peer_socket.getpeername()))
+        self.sockets[peer_socket] = SocketProcessor.MessageStream(on_request)
 
     def prepare_request(self, receiver, message, event):
         """ Adds an event to wait for a response to the given message.
@@ -238,27 +248,34 @@ class SocketProcessor(InfiniteThread):
         if not socket_list: return
 
         rd, _, er = select.select(socket_list, [], socket_list, 1)
+
+        for sock in er:
+            self.sockets.pop(sock)
+            self.on_error(sock, graceful=False)
+
         for sock in rd:
             try:
                 data = sock.recv(message.MessageContainer.MIN_MESSAGE_LEN)
                 if not data:
-                    print "Socket is closed!"
+                    L.debug("A socket was closed (no data)!")
                     self.sockets.pop(sock)
+                    self.on_error(sock, graceful=True)
                     continue
 
             except socket.error, e:
-                print "Socket errored out:", str(e)
+                L.error("Socket errored out during select(): %s", str(e))
                 self.sockets.pop(sock)
+                self.on_error(sock, graceful=False)
                 continue
 
-            print "received raw message from %s: %s" % (
+            L.debug("Received raw message from %s: %s",
                 repr(sock.getpeername()), repr(data))
 
             stream = self.sockets[sock]
             stream.queue.read(data)
             while stream.queue.ready:
                 msg = stream.queue.pop()
-                print "Full message received!", repr(msg)
+                L.debug("Full message received: %s", repr(msg))
 
                 for pair in stream.pending_requests:
                     if pair.request.seq == msg.original.seq:
@@ -270,9 +287,8 @@ class SocketProcessor(InfiniteThread):
     def response(self, peer, response):
         """ Sends a response to the given peer, correlated with the request.
         """
-        print "Sending response to message: %s" % response
+        L.debug("Sending response to message: %s", response)
         data = response.pack()
-        print "raw send data:", repr(data)
         return peer.sendall(data)
 
     def request(self, peer, message, on_response, wait_time=0):
@@ -290,13 +306,16 @@ class SocketProcessor(InfiniteThread):
         :returns        the value of the response handler, if it's called.
                         Otherwise, `False` is returned on timeout.
         """
+        if not isinstance(peer, socket.socket):
+            raise TypeError("request() requires a raw socket.")
+
         evt = threading.Event()     # signaled when response is ready
 
         # Add this request to the current stream for the peer.
         self.prepare_request(peer, message, evt)
 
         # Send the request and wait for the response.
-        print "Sending message from %s to %s: %s" % (
+        L.debug("Sending message from %s to %s: %s",
             peer.getsockname(), peer.getpeername(), message)
 
         peer.sendall(message.pack())
@@ -305,7 +324,7 @@ class SocketProcessor(InfiniteThread):
             return False
 
         # TODO: The -1 access is a race condition.
-        print "Received response for message:", repr(
-            entry.pending_requests[-1].response)
+        L.debug("Received response for message: %s", repr(
+            entry.pending_requests[-1].response))
 
         return on_response(peer, entry.pending_requests[-1].response)

@@ -97,7 +97,7 @@ class JoinResponse(message.BaseMessage):
         :listener_addr  a 2-tuple address -- (IP, port) pair
         :finger_table   a list of `chordlib.fingertable.Finger`-like entries
         """
-        super(JoinResponse, self).__init__(message.MessageType.MSG_CH_JOINR)
+        super(JoinResponse, self).__init__(self.TYPE)
 
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
@@ -179,6 +179,9 @@ class JoinResponse(message.BaseMessage):
 class InfoRequest(message.BaseMessage):
     RAW_FORMAT = []
     TYPE = message.MessageType.MSG_CH_INFO
+
+    def __init__(self):
+        super(InfoRequest, self).__init__(self.TYPE)
 
 
 class InfoResponse(JoinResponse):

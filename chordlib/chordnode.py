@@ -14,13 +14,13 @@ from chordlib import utils as chutils
 class Stabilizer(commlib.InfiniteThread):
     """ Performs the Chord stabilization algorithm on a particular node. """
     def __init__(self, node):
-        super(Stabilizer, self).__init__()
+        super(Stabilizer, self).__init__(name="StabilizerThread")
         self.node = node
 
     def _loop_method(self):
+        time.sleep(random.randint(3, 10))
         self.node.stabilize()
         self.node.fix_fingers()
-        time.sleep(random.randint(3, 8))
 
 
 class ChordNode(object):
@@ -41,8 +41,6 @@ class ChordNode(object):
         self.hash = fingertable.pack_string(fingertable.chord_hash(data))
         self.predecessor = None
         self.fingers = fingertable.FingerTable(self)
-        self.stable = Stabilizer(self)
-        self.stable.start()
         self.local_addr = (socket.gethostbyname(listener_addr[0]),
                            listener_addr[1])
 
@@ -57,10 +55,6 @@ class ChordNode(object):
     def finger(self, i):
         assert len(self.fingers) <= fingertable.BITCOUNT, "Finger table too long!"
         return self.fingers.finger(i)
-
-    def pr(self, *args):
-        print "%03s | %s" % (str(int(self))[:8],
-            ' '.join([ str(x) for x in args ]))
 
     @property
     def successor(self):
