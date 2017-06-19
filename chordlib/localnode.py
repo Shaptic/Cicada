@@ -175,11 +175,15 @@ class LocalNode(chordnode.ChordNode):
         # linked.
         if self.successor.predecessor is None:
             info_msg = chordpkt.InfoRequest.make_packet()
-            if not self.processor.request(self.successor.peer_sock, info_msg,
-                                          self.on_info_response, wait_time=5):
+            info_rsp = self.processor.request(self.successor.peer_sock,
+                info_msg, self.on_info_response, wait_time=5)
+
+            if not info_rsp:
                 L.error("on_info_response failed.")
-                self.successor.notify(self)
                 return
+
+            import pdb; pdb.set_trace()
+            self.successor.add_node(info_rsp)
 
         x = self.successor.predecessor
 
@@ -188,7 +192,17 @@ class LocalNode(chordnode.ChordNode):
         # us as our own successor!
         if self.fingers.local.within_open(x.hash):
             self.fingers.set_successor(x)
-        self.successor.notify(self)
+
+        # We need to now notify our new successor about ourselves, so that they
+        # can adjust their tables accordingly as well.
+        notif_msg = chord.NotifyRequest.make_packet()
+
+        # We don't care about the response, so just fire away.
+        self.processor.request(self.successor.peer_sock, notif_msg,
+                               lambda *args: True, wait_time=0)
+
+    def on_notify_response(self, sock, msg):
+        notif_msg = chord.NotifyResponse.unpack(msg.data)
 
     def fix_fingers(self):
         """ This ensures that the finger table is current.
@@ -260,12 +274,13 @@ class LocalNode(chordnode.ChordNode):
         L.debug("on_info_response::msg:  %s", msg)
 
         peer = self._peerlist_contains(sock)
-        if not peer:
-            L.warning("The message is from an unknown peer!")
+        if peer is None:
+            L.warning("The message is from an unknown peer.")
             return False
 
         info_resp = chordpkt.InfoResponse.unpack(msg.data)
         L.debug("on_info_response::data: %s", info_resp)
+        return info_resp
 
     def on_join_request(self, sock, msg):
         """ Receives a JOIN request from a node previously outside the ring.
@@ -336,7 +351,11 @@ class LocalNode(chordnode.ChordNode):
         L.debug("notify::sock: %s", sock)
         L.debug("notify::msg:  %s", msg)
 
-        node = [ x for x in self.peers if x.peer_sock is sock ][0]
+        node = self._peerlist_contains(sock)
+        if node is None:
+            L.warning("Received message from a non-peer.")
+            return
+
         if self.predecessor is None or \
            fingertable.Interval(self.predecessor.hash, self.hash).within(node):
             self.predecessor = node
@@ -351,19 +370,19 @@ class LocalNode(chordnode.ChordNode):
         return True
 
     def _peerlist_contains(self, elem):
-        if isinstance(elem, (tuple, )):
+        if isinstance(elem, tuple):
             for peer in self.peers:
                 if peer.remote_addr == elem:
                     return peer
 
-        elif isinstance(elem, (socket.socket, )):
+        elif isinstance(elem, commlib.ThreadsafeSocket):
             for peer in self.peers:
                 if peer.peer_sock == elem:
                     return peer
             else:
                 return self._peerlist_contains(elem.getsockname())
 
-        elif isinstance(elem, (remotenode.RemoteNode, )):
+        elif isinstance(elem, remotenode.RemoteNode):
             for peer in self.peers:
                 if peer == elem:
                     return peer

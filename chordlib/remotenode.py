@@ -80,12 +80,6 @@ class RemoteNode(chordnode.ChordNode):
         super(RemoteNode, self).__init__(
             "%s:%d" % remote_addr, peer_listener_addr)
 
-    def notify(self, local_node):
-        """ The given `local_node` is notifying this peer of its existence.
-        """
-        self.peer_sock.sendall("NOTIFY\r\n")
-        data = self.peer_sock.recv(64)
-
     def __str__(self):
         return "<RemoteNode | %s>" % super(RemoteNode, self).__str__()
 

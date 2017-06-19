@@ -327,10 +327,17 @@ class SocketProcessor(InfiniteThread):
 
                 if msg.original is None:
                     stream.handler(sock, msg)
+                    continue
 
                 for pair in stream.pending_requests:
+                    # FIXME: This is not an efficient way to consider a request
+                    #        to be "finished."
+                    # if pair.response is not None:
+                    #     continue
+
                     if pair.request.seq == msg.original.seq:
                         pair.trigger(sock, msg)
+                        # stream.pending_requests.remove(pair)
                         break
                 else:
                     stream.handler(sock, msg)
@@ -342,11 +349,11 @@ class SocketProcessor(InfiniteThread):
         data = response.pack()
         return peer.sendall(data)
 
-    def request(self, peer, message, on_response, wait_time=None):
+    def request(self, peer, msg, on_response, wait_time=None):
         """ Initiates a request on a particular thread.
 
         :peer               the raw socket to send the message from
-        :message            the MessageContainer to send on the thread socket
+        :msg                the MessageContainer to send on the thread socket
         :on_response        the callable to run when the response is received.
                                 on_response(receiver_socket, response)
         :wait_time[=None]  in seconds, the amount to wait for a response.
@@ -360,16 +367,19 @@ class SocketProcessor(InfiniteThread):
         if not isinstance(peer, ThreadsafeSocket):
             raise TypeError("request() requires a raw socket.")
 
+        if not isinstance(msg, message.MessageContainer):
+            raise TypeError("request() requires a proper MessageContainer.")
+
         evt = threading.Event()     # signaled when response is ready
 
         # Add this request to the current stream for the peer.
-        self.prepare_request(peer, message, evt)
+        self.prepare_request(peer, msg, evt)
 
         # Send the request and wait for the response.
         L.debug("Sending message from %s to %s: %s",
-            peer.getsockname(), peer.getpeername(), message)
+            peer.getsockname(), peer.getpeername(), msg)
 
-        peer.sendall(message.pack())
+        peer.sendall(msg.pack())
         entry = self.sockets[peer]
         if not evt.wait(timeout=wait_time):
             L.warning("Event expired (timeout=%s).", repr(wait_time))
