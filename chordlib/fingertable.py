@@ -204,22 +204,26 @@ class FingerTable(object):
         Each of these mean the same action: the first entry that follows the
         removed ones is the new successor node.
         """
+        L.info("Removing node from finger table:")
+        L.info("\t%s", node)
+
         self.seen_nodes.discard(node)
 
         removed = {}    # dict -> { index: cleaned node }
+        L.debug("During removal, removed:")
         for i, f in enumerate(self.entries):
             if f.node is node:
-                print "removing", f
+                L.debug("\t%s", f)
                 removed[i] = f
                 f.node = None
 
+        L.debug("Node finger table is now:")
+        for i in xrange(0, len(self) - 1, 2):
+            L.debug("\t%s ; %s", self.finger(i), self.finger(i + 1))
+
         # TODO: Optimize this, because they should all be the same?
-        print "fingers are now"
-        print self
         for index, entry in removed.iteritems():
             repl = self.find_successor(entry.start)
-            print "replacing with", repl
-            print "based on", entry
             self.entries[index].node = repl
 
     def find_successor(self, value):

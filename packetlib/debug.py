@@ -2,33 +2,7 @@
 """
 
 import re
-import sys
 import struct
-import socket
-
-
-class LoggedSocket(socket.socket):
-    """ Wraps logging around common socket operations.
-    """
-    def __init__(self, logfile=sys.stdout):
-        super(LoggedSocket, self).__init__(socket.AF_INET, socket.SOCK_STREAM)
-        self.log = logfile
-
-    def send(self, *args):
-        raise NotImplemented("Use sendall()!")
-
-    def sendall(self, bytestream):
-        self.log.write("Sending %d bytes %s ... " % (
-            len(bytestream), repr(bytestream)))
-        super(LoggedSocket, self).sendall(bytestream)
-        self.log.write("done.\n")
-        self.log.flush()
-
-    def recv(self, amt):
-        self.log.write("Waiting on %d bytes ... " % amt)
-        data = super(LoggedSocket, self).recv(amt)
-        self.log.write("Received %d bytes: %s" % (len(data), repr(data)))
-        return data
 
 
 def hexdump(data, chars=16, indent=0):

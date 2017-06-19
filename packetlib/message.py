@@ -8,6 +8,8 @@ import struct
 import collections
 
 from packetlib.errors import ExceptionType
+
+from chordlib         import L
 from chordlib         import utils as chutils
 
 
@@ -66,10 +68,6 @@ class UnpackException(Exception):
     def __init__(self, exc_type, *args):
         super(UnpackException, self).__init__(
             EXCEPTION_STRINGS[exc_type] % args)
-
-
-# class ReplyingMessageContainer(MessageContainer):
-#     pass
 
 
 class MessageContainer(object):
@@ -288,7 +286,7 @@ class MessageContainer(object):
             raise UnpackException(ExceptionType.EXC_BAD_CHECKSUM)
 
         cicada.checksum = checksum
-        print "Checksum:", cicada, repr(cicada.checksum)
+        L.debug("Checksum for %s: %s", cicada, repr(cicada.checksum))
         return cicada
 
     @classmethod

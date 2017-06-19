@@ -4,10 +4,52 @@ import socket
 import struct
 import random
 import time
+import sys
 
 import chordlib.utils   as     chutils
 from   chordlib         import L
 from   packetlib        import message
+
+
+class ThreadsafeSocket(object):
+    """ Provides a thread-safe interface into sockets.
+
+    Additionally, it performs logging on send/receive operations.
+    """
+
+    def __init__(self, existing_socket=None, log=sys.stdout):
+        self.socket = existing_socket
+        self.log = log
+
+        if not self.socket:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    def accept(self):
+        sock, addr = self.socket.accept()
+        return ThreadsafeSocket(sock), addr
+
+    def send(self, *args):
+        raise NotImplemented("Use sendall()!")
+
+    def sendall(self, bytestream):
+        with threading.Lock() as lock:
+            self.log.write("Sending %d bytes %s ... " % (
+                len(bytestream), repr(bytestream)))
+            self.socket.sendall(bytestream)
+            self.log.write("done.\n")
+            self.log.flush()
+
+    def recv(self, amt):
+        self.log.write("Waiting on %d bytes ... " % amt)
+        data = self.socket.recv(amt)
+        self.log.write("Received %d bytes: %s\n" % (len(data), repr(data)))
+        return data
+
+    def __getattr__(self, attr):
+        if hasattr(self.socket, attr):
+            return getattr(self.socket, attr)
+        raise AttributeError
+
 
 class ReadQueue(object):
     """ A queue that combines incoming packets until a complete one is found.
@@ -218,7 +260,7 @@ class SocketProcessor(InfiniteThread):
             handler. It is called with these args:
                 on_request(socket_received_on, raw_data_received)
         """
-        if not isinstance(peer_socket, socket.socket):
+        if not isinstance(peer_socket, ThreadsafeSocket):
             raise TypeError("Initialized processor thread without socket.")
 
         L.debug("Added %s to processing list", repr(peer_socket.getpeername()))
@@ -277,6 +319,14 @@ class SocketProcessor(InfiniteThread):
                 msg = stream.queue.pop()
                 L.debug("Full message received: %s", repr(msg))
 
+                # For responses (they include an "original" member), we call the
+                # respective response handler if there's one pending. Otherwise,
+                # both for requests and unexpected responses, we call the
+                # generic handler.
+
+                if msg.original is None:
+                    stream.handler(sock, msg)
+
                 for pair in stream.pending_requests:
                     if pair.request.seq == msg.original.seq:
                         pair.trigger(sock, msg)
@@ -306,7 +356,7 @@ class SocketProcessor(InfiniteThread):
         :returns        the value of the response handler, if it's called.
                         Otherwise, `False` is returned on timeout.
         """
-        if not isinstance(peer, socket.socket):
+        if not isinstance(peer, ThreadsafeSocket):
             raise TypeError("request() requires a raw socket.")
 
         evt = threading.Event()     # signaled when response is ready

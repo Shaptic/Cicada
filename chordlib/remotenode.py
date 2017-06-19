@@ -37,12 +37,6 @@ from   chordlib  import chordnode
 from   packetlib import chord
 import packetlib.debug
 
-def parse_successor(data):
-    index = data.find("NONE")
-    if index == -1:
-        return data.split(',')
-    return "NONE"
-
 
 class RemoteNode(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
@@ -76,7 +70,7 @@ class RemoteNode(chordnode.ChordNode):
         if existing_socket is not None:
             s = existing_socket
         else:
-            s = packetlib.debug.LoggedSocket()
+            s = commlib.ThreadsafeSocket()
             s.connect(remote_addr)
 
         self.peer_sock = s

@@ -42,7 +42,7 @@ class LocalNode(chordnode.ChordNode):
 
         # This socket is responsible for inbound connections (from new potential
         # Peer nodes). It is always in an "accept" state in a separate thread.
-        self.listener = packetlib.debug.LoggedSocket()
+        self.listener = commlib.ThreadsafeSocket()
         self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener.bind(bind_addr)
         self.listener.listen(5)
@@ -212,9 +212,9 @@ class LocalNode(chordnode.ChordNode):
             peer_socket.getsockname()[0], peer_socket.getsockname()[1])
 
         handlers = {
-            packetlib.MessageType.MSG_CH_JOIN:  self.on_join_request,
-            packetlib.MessageType.MSG_CH_INFO:  self.on_info_request,
-            packetlib.MessageType.MSG_CH_INFO:  self.on_notify_request,
+            packetlib.MessageType.MSG_CH_JOIN:      self.on_join_request,
+            packetlib.MessageType.MSG_CH_INFO:      self.on_info_request,
+            packetlib.MessageType.MSG_CH_NOTIFY:    self.on_notify_request,
         }
 
         for msg_type, func in handlers.iteritems():
@@ -250,18 +250,21 @@ class LocalNode(chordnode.ChordNode):
             original=msg)
 
         L.debug("Responding to INFO with %s", repr(infor_msg))
-        self.processor.response(message, sock, infor_msg)
+        self.processor.response(sock, infor_msg)
         return True
 
     def on_info_response(self, sock, msg):
         """ Processes a peer's information from an INFO response.
         """
-        peer = self._peerlist_contains(sock)
-        if not peer: return False
-
-        info_resp = chordpkt.InfoResponse.unpack(msg.data)
         L.debug("on_info_response::sock: %s", sock.getsockname())
         L.debug("on_info_response::msg:  %s", msg)
+
+        peer = self._peerlist_contains(sock)
+        if not peer:
+            L.warning("The message is from an unknown peer!")
+            return False
+
+        info_resp = chordpkt.InfoResponse.unpack(msg.data)
         L.debug("on_info_response::data: %s", info_resp)
 
     def on_join_request(self, sock, msg):

@@ -40,7 +40,7 @@ class JoinRequest(message.BaseMessage):
         ip, offset  = get(0)
         port, offset = get(1)
 
-        j = JoinRequest((pktutils.int_to_ip(ip), port))
+        j = cls((pktutils.int_to_ip(ip), port))
         return j
 
     @property
@@ -160,10 +160,8 @@ class JoinResponse(message.BaseMessage):
             node = cls.FAKE_NODE((pktutils.int_to_ip(node_ip), node_pt), hash_val)
             fingers.append(fingertable.Finger(interval_st, interval_ed, node))
 
-        return JoinResponse(hash_value, (
-                                pktutils.int_to_ip(listener_ip),
-                                listener_pt
-                            ), fingers)
+        return cls(hash_value, (pktutils.int_to_ip(listener_ip), listener_pt),
+                   fingers)
 
     @property
     def listener(self):
@@ -188,15 +186,18 @@ class InfoResponse(JoinResponse):
     RAW_FORMAT = JoinResponse.RAW_FORMAT
     TYPE = message.MessageType.MSG_CH_INFOR
 
+    def __init__(self, *args):
+        super(InfoResponse, self).__init__(*args)
+
 
 class Notify(message.BaseMessage):
     RAW_FORMAT = []
-    pass
+    TYPE = message.MessageType.MSG_CH_NOTIFY
 
 
 class NotifyResponse(message.BaseMessage):
     RAW_FORMAT = []
-    pass
+    TYPE = message.MessageType.MSG_CH_NOTIFYR
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ class ChordFormatter(logging.Formatter):
         "",#"[%(asctime)s]",
         # PREFIX % "%(module)s:%(filename)s:%(funcName)s:%(lineno)s",
         SUFFIX)
+    ERROR_FORMAT = "%(module)s:%(filename)s:%(funcName)s:%(lineno)s " + FORMAT
 
     def __init__(self):
         super(ChordFormatter, self).__init__(fmt=self.FORMAT,
@@ -25,6 +26,9 @@ class ChordFormatter(logging.Formatter):
 
         if record.levelno == logging.DEBUG:
             self._fmt = self.DEBUG_FORMAT
+
+        elif record.levelno in (logging.ERROR, logging.CRITICAL):
+            self._fmt = self.ERROR_FORMAT
 
         result = super(ChordFormatter, self).format(record)
 
