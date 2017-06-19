@@ -72,19 +72,20 @@ class ReadQueue(object):
     def read(self, data):
         """ Processes some data into the queue.
         """
-        self.pending += data
-        index = self.pending.find(self.BUFFER_END_BYTES)
-        if index == -1: return
+        with threading.Lock() as queue_lock:
+            self.pending += data
+            index = self.pending.find(self.BUFFER_END_BYTES)
+            if index == -1: return
 
-        try:
-            pkt = message.MessageContainer.unpack(self.pending)
-            self.queue.append(pkt)
-            self.pending = self.pending[index + len(self.BUFFER_END_BYTES):]
+            try:
+                pkt = message.MessageContainer.unpack(self.pending)
+                self.queue.append(pkt)
+                self.pending = self.pending[index + len(self.BUFFER_END_BYTES):]
 
-        except message.UnpackException, e:
-            L.error("Failed to parse incoming message: %s", repr(self.pending))
-            message.MessageContainer.debug_packet(self.pending)
-            raise
+            except message.UnpackException, e:
+                L.warning("Failed to parse incoming message: %s", repr(self.pending))
+                message.MessageContainer.debug_packet(self.pending)
+                raise
 
     @property
     def ready(self):
@@ -341,15 +342,15 @@ class SocketProcessor(InfiniteThread):
         data = response.pack()
         return peer.sendall(data)
 
-    def request(self, peer, message, on_response, wait_time=0):
+    def request(self, peer, message, on_response, wait_time=None):
         """ Initiates a request on a particular thread.
 
-        :peer           the raw socket to send the message from
-        :message        the MessageContainer to send on the thread socket
-        :on_response    the callable to run when the response is received.
-                            on_response(receiver_socket, response)
-        :wait_time[=0]  in seconds, the amount to wait for a response.
-            If it's set to zero, then we wait an indefinite number of time for
+        :peer               the raw socket to send the message from
+        :message            the MessageContainer to send on the thread socket
+        :on_response        the callable to run when the response is received.
+                                on_response(receiver_socket, response)
+        :wait_time[=None]  in seconds, the amount to wait for a response.
+            If it's set to None, then we wait an indefinite number of time for
             the response, which is a risky operation as then there's no way to
             cancel it.
 
@@ -371,6 +372,7 @@ class SocketProcessor(InfiniteThread):
         peer.sendall(message.pack())
         entry = self.sockets[peer]
         if not evt.wait(timeout=wait_time):
+            L.warning("Event expired (timeout=%s).", repr(wait_time))
             return False
 
         # TODO: The -1 access is a race condition.

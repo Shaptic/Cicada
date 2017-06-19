@@ -176,7 +176,7 @@ class LocalNode(chordnode.ChordNode):
         if self.successor.predecessor is None:
             info_msg = chordpkt.InfoRequest.make_packet()
             if not self.processor.request(self.successor.peer_sock, info_msg,
-                                          self.on_info_response):
+                                          self.on_info_response, wait_time=5):
                 L.error("on_info_response failed.")
                 self.successor.notify(self)
                 return
