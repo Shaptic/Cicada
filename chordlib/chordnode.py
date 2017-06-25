@@ -63,7 +63,9 @@ class ChordNode(object):
 
     def __repr__(self): return str(self)
     def __int__(self):  return self.hash
-    def norecstr(self): return "<%s | hash=%s>" % (self.data, str(int(self))[:8])
+    def norecstr(self): return "<%s | hash=%s>" % (
+        self.data if self.data else str(self.hash),
+        str(int(self))[:8])
     def __str__(self):  return "%s,pred=%s>" % (
         self.norecstr()[:-1],
         self.predecessor.norecstr() if self.predecessor is not None else "None")

@@ -48,4 +48,4 @@ h.setFormatter(ChordFormatter())
 
 L = log = logging.getLogger(__name__)
 L.addHandler(h)
-L.setLevel(logging.DEBUG)
+L.setLevel(logging.INFO)

@@ -17,10 +17,8 @@ class ThreadsafeSocket(object):
     Additionally, it performs logging on send/receive operations.
     """
 
-    def __init__(self, existing_socket=None, log=sys.stdout):
+    def __init__(self, existing_socket=None):
         self.socket = existing_socket
-        self.log = log
-
         if not self.socket:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -33,16 +31,13 @@ class ThreadsafeSocket(object):
 
     def sendall(self, bytestream):
         with threading.Lock() as lock:
-            self.log.write("Sending %d bytes %s ... " % (
-                len(bytestream), repr(bytestream)))
             self.socket.sendall(bytestream)
-            self.log.write("done.\n")
-            self.log.flush()
+            L.debug("Sent %d bytes %s ... ", len(bytestream), repr(bytestream))
 
     def recv(self, amt):
-        self.log.write("Waiting on %d bytes ... " % amt)
+        L.debug("Waiting on %d bytes ... ", amt)
         data = self.socket.recv(amt)
-        self.log.write("Received %d bytes: %s\n" % (len(data), repr(data)))
+        L.debug("Received %d bytes: %s", len(data), repr(data))
         return data
 
     def __getattr__(self, attr):
@@ -169,7 +164,7 @@ class ListenerThread(InfiniteThread):
                                    ListenerThread.TIMEOUT)
         if rd:
             client, addr = self.listener.accept()
-            L.info("Accepted peer: %s:%d", addr[0], addr[1])
+            L.info("Incoming peer: %s:%d", addr[0], addr[1])
             self._on_accept(addr, client)
 
         elif er:
@@ -382,7 +377,8 @@ class SocketProcessor(InfiniteThread):
         peer.sendall(msg.pack())
         entry = self.sockets[peer]
         if not evt.wait(timeout=wait_time):
-            L.warning("Event expired (timeout=%s).", repr(wait_time))
+            if wait_time:   # no message if intentional timeout
+                L.warning("Event expired (timeout=%s).", repr(wait_time))
             return False
 
         # TODO: The -1 access is a race condition.

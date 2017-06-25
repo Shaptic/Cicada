@@ -34,8 +34,6 @@ import socket
 
 from   chordlib  import commlib
 from   chordlib  import chordnode
-from   packetlib import chord
-import packetlib.debug
 
 
 class RemoteNode(chordnode.ChordNode):
@@ -51,7 +49,8 @@ class RemoteNode(chordnode.ChordNode):
     actual network communication to fetch it.
     """
 
-    def __init__(self, remote_addr, peer_listener_addr, existing_socket=None):
+    def __init__(self, node_hash, remote_addr, peer_listener_addr,
+                 existing_socket=None):
         """ Establishes a connection to a remote node.
 
         The address is the receiving end of the socket of the `LocalNode`
@@ -59,6 +58,7 @@ class RemoteNode(chordnode.ChordNode):
 
         If `existing_socket` exists, there is no connection initiated.
 
+        :node_hash
         :remote_addr
         :peer_listener_addr
         :existing_socket
@@ -77,8 +77,8 @@ class RemoteNode(chordnode.ChordNode):
         self.remote_addr = remote_addr
         self.complete = False   # set when the socket closes
 
-        super(RemoteNode, self).__init__(
-            "%s:%d" % remote_addr, peer_listener_addr)
+        super(RemoteNode, self).__init__("", peer_listener_addr)
+        self.hash = node_hash
 
     def __str__(self):
         return "<RemoteNode | %s>" % super(RemoteNode, self).__str__()

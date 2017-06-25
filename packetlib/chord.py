@@ -2,6 +2,7 @@ import struct
 import collections
 
 from chordlib  import fingertable
+from chordlib  import remotenode
 from packetlib import message
 from packetlib import utils as pktutils
 
@@ -16,20 +17,31 @@ class JoinRequest(message.BaseMessage):
 
     TYPE = message.MessageType.MSG_CH_JOIN
     RAW_FORMAT = [
+        "H",    # hash length, in bytes (32 for SHA256)
+        "%ds" % (fingertable.BITCOUNT / 8),
+                # SHA256 hash
         "I",    # IPv4 address
         "H",    # port
     ]
 
-    def __init__(self, listener_addr):
+    def __init__(self, node_hash, listener_addr):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
+        if not isinstance(node_hash, int):
+            raise TypeError("Please provide an integer for a hash.")
+
         super(JoinRequest, self).__init__(self.TYPE)
+
+        self.node_hash = fingertable.unpack_string(node_hash)
+        assert len(self.node_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
+
         self.address = pktutils.ip_to_int(listener_addr[0])
         self.port = listener_addr[1]
 
     def pack(self):
-        return struct.pack('!' + self.FORMAT, self.address, self.port)
+        return struct.pack('!' + self.FORMAT,
+            len(self.node_hash), self.node_hash, self.address, self.port)
 
     @classmethod
     def unpack(cls, bytestream):
@@ -37,10 +49,12 @@ class JoinRequest(message.BaseMessage):
         get = lambda i: message.MessageContainer.extract_chunk(
             cls.RAW_FORMAT[i], bytestream, offset)
 
-        ip, offset  = get(0)
-        port, offset = get(1)
+        hashlen, offset = get(0)
+        nhash,   offset = get(1)
+        ip,      offset = get(2)
+        port,    offset = get(3)
 
-        j = cls((pktutils.int_to_ip(ip), port))
+        j = cls(fingertable.pack_string(nhash), (pktutils.int_to_ip(ip), port))
         return j
 
     @property
@@ -102,9 +116,10 @@ class JoinResponse(message.BaseMessage):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
-        if isinstance(node_hash, int):
-            node_hash = fingertable.unpack_string(node_hash)
+        if not isinstance(node_hash, int):
+            raise TypeError("Please provide an integer for a hash.")
 
+        node_hash = fingertable.unpack_string(node_hash)
         assert len(node_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
 
         self.node_hash = node_hash
@@ -160,13 +175,12 @@ class JoinResponse(message.BaseMessage):
             node = cls.FAKE_NODE((pktutils.int_to_ip(node_ip), node_pt), hash_val)
             fingers.append(fingertable.Finger(interval_st, interval_ed, node))
 
-        return cls(hash_value, (pktutils.int_to_ip(listener_ip), listener_pt),
-                   fingers)
+        return cls(fingertable.pack_string(hash_value),
+            (pktutils.int_to_ip(listener_ip), listener_pt), fingers)
 
     @property
     def listener(self):
         return (pktutils.int_to_ip(self.address), self.port)
-
 
     def __str__(self):
         return "<%s | Node (%s:%d),hash=%s,fingers=%d>" % (
@@ -190,14 +204,90 @@ class InfoResponse(JoinResponse):
         super(InfoResponse, self).__init__(*args)
 
 
-class Notify(message.BaseMessage):
+class NotifyRequest(message.BaseMessage):
     RAW_FORMAT = []
     TYPE = message.MessageType.MSG_CH_NOTIFY
 
+    def __init__(self):
+        super(NotifyRequest, self).__init__(self.TYPE)
+
 
 class NotifyResponse(message.BaseMessage):
-    RAW_FORMAT = []
+    RAW_FORMAT = [
+        "H",    # hash length, in bytes (32 for SHA256)
+        "%ds" % (fingertable.BITCOUNT / 8),
+                # SHA256 hash
+        "%ds" % (fingertable.BITCOUNT / 8),
+                # predecessor SHA256 hash
+        "I",    # predecessor listener ip
+        "H",    # predecessor listener port
+        "%ds" % (fingertable.BITCOUNT / 8),
+                # successor SHA256 hash
+        "I",    # successor listener ip
+        "H",    # successor listener port
+    ]
     TYPE = message.MessageType.MSG_CH_NOTIFYR
+
+    def __init__(self, node_hash, succ, pred):
+        """ Creates internal structures, including a fake finger table.
+
+        :node_hash  a string representing the hash bytes
+        :succ       successor node (inc. hash + listener address)
+        :pred       predecessor node (inc. hash + listener address)
+        """
+        super(NotifyResponse, self).__init__(self.TYPE)
+
+        if any([isinstance(x, str) for x in (node_hash, succ.hash, pred.hash)]):
+            raise TypeError("Please provide an integer for a hash.")
+
+        self.node_hash = fingertable.unpack_string(node_hash)
+        self.succ_hash = fingertable.unpack_string(succ.hash)
+        self.pred_hash = fingertable.unpack_string(pred.hash)
+
+        assert len(self.node_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
+        assert len(self.pred_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
+        assert len(self.succ_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
+
+        self.succ_addr = succ.local_addr
+        self.pred_addr = pred.local_addr
+
+    def pack(self):
+        hash_bytes = fingertable.BITCOUNT / 8
+
+        pkt = struct.pack('!' + self.FORMAT,
+            hash_bytes, self.node_hash,
+            self.succ_hash,
+            pktutils.ip_to_int(self.succ_addr[0]), self.succ_addr[1],
+            self.pred_hash,
+            pktutils.ip_to_int(self.pred_addr[0]), self.pred_addr[1])
+
+        return pkt
+
+    @classmethod
+    def unpack(cls, bytestream):
+        offset = 0
+        get = lambda idx: message.MessageContainer.extract_chunk(
+            cls.RAW_FORMAT[idx], bytestream, offset)
+
+        hash_len, offset  = get(0)
+        node_hash, offset = get(1)
+        pred_hs, offset   = get(2)
+        pred_ip, offset   = get(3)
+        pred_pt, offset   = get(4)
+        succ_hs, offset   = get(5)
+        succ_ip, offset   = get(6)
+        succ_pt, offset   = get(7)
+
+        paddr = (pktutils.int_to_ip(pred_ip), pred_pt)
+        saddr = (pktutils.int_to_ip(succ_ip), succ_pt)
+
+        FakeSocket = 0xFA#KE
+        pn = remotenode.RemoteNode(fingertable.pack_string(pred_hs),
+                                   paddr, paddr, FakeSocket)
+        sn = remotenode.RemoteNode(fingertable.pack_string(succ_hs),
+                                   saddr, saddr, FakeSocket)
+
+        return cls(node_hash, pn, sn)
 
 
 if __name__ == "__main__":

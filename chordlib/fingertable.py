@@ -204,8 +204,9 @@ class FingerTable(object):
         Each of these mean the same action: the first entry that follows the
         removed ones is the new successor node.
         """
-        L.info("Removing node from finger table:")
-        L.info("\t%s", node)
+        L.info("Discarding node from lookup table with hash=%d", node.hash)
+        L.debug("Removing node from finger table:")
+        L.debug("\t%s", node)
 
         self.seen_nodes.discard(node)
 

@@ -74,4 +74,5 @@ complexity across all nodes; this is a huge improvement over the standard
 - [x] Implement threading for stabilization routine.
 - [x] Test threading with respect to concurrent joins. 
 - [x] Design and implement remote nodes and rings.
-- [ ] Implement underlying p2p socket protocol.
+- [x] Implement underlying p2p socket protocol.
+- [ ] Use the established Chord rings for a routing protocol.
