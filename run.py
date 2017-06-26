@@ -38,7 +38,8 @@ def main(host_address, join_address=None):
         while True:
             time.sleep(60)
     except KeyboardInterrupt:
-        pass
+        print "Interrupting for interactive mode."
+        import pdb; pdb.set_trace()
 
     return (root, )
 

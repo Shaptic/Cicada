@@ -64,15 +64,6 @@ class ChordNode(object):
     def hash(self):
         return self._hash   # undefined in this class
 
-    def __repr__(self): return str(self)
-    def __int__(self):  return int(self.hash)
-    def norecstr(self): return "<%s | hash=%s>" % (
-        self.data if self.data else str(self.hash),
-        str(int(self))[:8])
-    def __str__(self):  return "%s,pred=%s>" % (
-        self.norecstr()[:-1],
-        self.predecessor.norecstr() if self.predecessor is not None else "None")
-
 
 def walk_ring(root, maxcount=10):
     count = 0

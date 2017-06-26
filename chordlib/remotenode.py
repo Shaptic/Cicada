@@ -85,5 +85,6 @@ class RemoteNode(chordnode.ChordNode):
         super(RemoteNode, self).__init__(peer_listener_addr)
 
     def __str__(self):
-        return "<RemoteNode | %s>" % super(RemoteNode, self).__str__()
-
+        return "<RemoteNode | hash=%d,pred=%s,succ=%s>" % (self.hash,
+            str(int(self.predecessor.hash)) if self.predecessor else None,
+            str(int(self.successor.hash))   if self.successor   else None)

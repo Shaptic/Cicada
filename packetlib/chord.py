@@ -140,9 +140,9 @@ class JoinResponse(message.BaseMessage):
     ]
 
     RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,
-                # SHA256 hash
-        PackedAddress.EMBED_FORMAT,
+        PackedHash.EMBED_FORMAT,    # hash of the sender
+        PackedHash.EMBED_FORMAT,    # hash of the would-be successor
+        PackedAddress.EMBED_FORMAT, # listener address of the would-be successor
         "I",    # number of entries in the table, usually BITCOUNT
         # a single table entry, repeated for the number of spec'd times
         "%ds"
@@ -151,10 +151,11 @@ class JoinResponse(message.BaseMessage):
     ENTRY = collections.namedtuple("Finger", "start end addr hash")
     FAKE_NODE = collections.namedtuple("Node", "local_addr hash")
 
-    def __init__(self, node_hash, listener_addr, finger_table=[]):
+    def __init__(self, sender_hash, succ_hash, listener_addr, finger_table=[]):
         """ Creates internal structures, including a fake finger table.
 
-        :node_hash      a Hash object for the node sending this message
+        :sender_hash    a Hash object for the node sending this message
+        :succ_hash      a Hash object of the successor of the requestor
         :listener_addr  a 2-tuple address -- (IP, port) pair
         :finger_table   a list of `chordlib.fingertable.Finger`-like entries
         """
@@ -163,10 +164,12 @@ class JoinResponse(message.BaseMessage):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
-        if not isinstance(node_hash, fingertable.Hash):
-            raise TypeError("Please provide an hash value for a hash.")
+        if not isinstance(sender_hash, fingertable.Hash) or \
+           not isinstance(succ_hash, fingertable.Hash):
+            raise TypeError("Please provide a Hash object as the value.")
 
-        self.node_hash = node_hash
+        self.sender_hash = sender_hash
+        self.succ_hash = succ_hash
         self.listener = listener_addr
 
         self.fingers = []
@@ -184,7 +187,8 @@ class JoinResponse(message.BaseMessage):
         ])
 
         pkt = struct.pack('!' + self.FORMAT % len(entry_bytes),
-            PackedHash(self.node_hash).pack(),
+            PackedHash(self.sender_hash).pack(),
+            PackedHash(self.succ_hash).pack(),
             PackedAddress(*self.listener).pack(),
             len(self.fingers), entry_bytes)
 
@@ -192,10 +196,11 @@ class JoinResponse(message.BaseMessage):
 
     @classmethod
     def unpack(cls, bytestream):
-        hash_val, bytestream = PackedHash.unpack(bytestream)
-        listener, bytestream = PackedAddress.unpack(bytestream)
-        finger_cnt, offset   = message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[2], bytestream, 0)
+        send_hash, bytestream = PackedHash.unpack(bytestream)
+        succ_hash, bytestream = PackedHash.unpack(bytestream)
+        listener, bytestream  = PackedAddress.unpack(bytestream)
+        finger_cnt, offset    = message.MessageContainer.extract_chunk(
+            cls.RAW_FORMAT[3], bytestream, 0)
 
         get = lambda idx: message.MessageContainer.extract_chunk(
             cls.ENTRY_FORMAT[idx], bytestream, offset)
@@ -210,7 +215,7 @@ class JoinResponse(message.BaseMessage):
             node = cls.FAKE_NODE(addr, hash_val)
             fingers.append(fingertable.Finger(interval_st, interval_ed, node))
 
-        return cls(hash_val, listener, fingers)
+        return cls(send_hash, succ_hash, listener, fingers)
 
     def __str__(self):
         return "<%s | Node (%s:%d),hash=%s,fingers=%d>" % (

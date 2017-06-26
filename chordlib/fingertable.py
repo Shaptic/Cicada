@@ -217,7 +217,7 @@ class FingerTable(object):
         ]
 
         self.root = node
-        self.local = Finger(self.entries[-1].end, self.root, self.root)
+        self.local = Finger(self.entries[-1].end, int(self.root.hash), self.root)
 
     def insert(self, node):
         """ Adds a node to the finger table if it's better than any successors.
