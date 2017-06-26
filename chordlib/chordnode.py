@@ -31,14 +31,13 @@ class ChordNode(object):
     we throw errors on those.
     """
 
-    def __init__(self, data, listener_addr):
+    def __init__(self, listener_addr):
         super(ChordNode, self).__init__()
         #
         # All Chord nodes exist in their own "ring" on initialization. They have
         # an empty finger table (save themselves) and no predecessor reference.
         #
-        self.data = data
-        self.hash = fingertable.pack_string(fingertable.chord_hash(data))
+        self.data = None
         self.predecessor = None
         self.fingers = fingertable.FingerTable(self)
         self.local_addr = (socket.gethostbyname(listener_addr[0]),
@@ -61,8 +60,12 @@ class ChordNode(object):
         assert self.fingers.real_length >= 1, "successor: node is isolated!"
         return self.finger(0).node
 
+    @property
+    def hash(self):
+        return self._hash   # undefined in this class
+
     def __repr__(self): return str(self)
-    def __int__(self):  return self.hash
+    def __int__(self):  return int(self.hash)
     def norecstr(self): return "<%s | hash=%s>" % (
         self.data if self.data else str(self.hash),
         str(int(self))[:8])

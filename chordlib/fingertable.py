@@ -53,6 +53,58 @@ def unpack_string(val):
     return string[::-1]
 
 
+class Hash(object):
+    """ Represents a hashed object with proper conversions between types.
+    """
+    def __init__(self, value="", hashed=""):
+        """ Initializes the hash in one of two ways.
+
+        Either you know the initial value, and the hash is computed, or you know
+        the hashed value (and the initial value is by definition not
+        determinable) and only that is stored.
+        """
+        if value and hashed:
+            raise ValueError("Either pass a value or its hash.")
+
+        self._value = value
+        if self._value:
+            self._hash_str = chord_hash(self._value)
+            self._hash_int = pack_string(self._hash_str)
+
+        elif isinstance(hashed, int):
+            self._hash_str = unpack_string(hashed)
+            self._hash_int = hashed
+
+        elif isinstance(hashed, str):
+            self._hash_str = hashed
+            self._hash_int = pack_string(hashed)
+
+        elif isinstance(hashed, Hash):  # copy
+            self._hash_str = str(hashed)
+            self._hash_int = int(hashed)
+            self._value = hashed.value
+
+        else:
+            import pdb; pdb.set_trace()
+            raise ValueError("Couldn't find suitable parameters.")
+
+        assert str(self) == unpack_string(int(self)), \
+            "Unpacked hash must match direct hash!"
+
+        assert len(str(self)) == (BITCOUNT / 8), \
+            "Invalid hash size: %s" % str(self)
+
+    @property
+    def value(self):
+        return self._value
+
+    def __str__(self):
+        return self._hash_str
+
+    def __int__(self):
+        return self._hash_int
+
+
 def khash(k):
     return (2 ** k) % HASHMOD
 
@@ -155,9 +207,11 @@ class FingerTable(object):
         """
         self.modulus = 2 ** bitcount
         self.seen_nodes = set()
+
+        node_hash = int(node.hash)
         self.entries = [
-            Finger((node.hash + 2 ** i) % self.modulus,
-                   (node.hash + 2 ** (i + 1)) % self.modulus,
+            Finger((node_hash + 2 ** i) % self.modulus,
+                   (node_hash + 2 ** (i + 1)) % self.modulus,
                    None, self.modulus) \
             for i in xrange(bitcount)
         ]
@@ -178,8 +232,8 @@ class FingerTable(object):
             # This node is closer to the start of the interval than the existing
             # node.
             if f.node is None or (
-               moddist(f.start, node.hash) < \
-               moddist(f.start, f.node.hash)):
+               moddist(f.start, int(node.hash)) < \
+               moddist(f.start, int(f.node.hash))):
                 f.node = node
 
     def remove(self, node):
@@ -237,10 +291,14 @@ class FingerTable(object):
         if start.successor is None:     # no fingers yet
             return start
 
-        tmpEntry = Interval(start.hash, start.successor.hash, self.modulus)
-        while not tmpEntry.within_closed(value):
+        tmp_entry = Interval(int(start.hash), int(start.successor.hash),
+                             self.modulus)
+
+        while not tmp_entry.within_closed(value):
             start = start.fingers.lookup_preceding(value)
-            tmpEntry = Interval(start.hash, start.successor.hash, self.modulus)
+            tmp_entry = Interval(int(start.hash), int(start.successor.hash),
+                                 self.modulus)
+
         return start
 
     def lookup_preceding(self, value):
@@ -248,7 +306,9 @@ class FingerTable(object):
         """
         for i in xrange(len(self) - 1, -1, -1):
             n = self.finger(i).node
-            if Interval(self.root.hash, value, self.modulus).within_open(n.hash):
+            if Interval(
+                int(self.root.hash), value, self.modulus
+            ).within_open(int(n.hash)):
                 return n
         return self.root
 

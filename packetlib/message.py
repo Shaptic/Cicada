@@ -386,7 +386,22 @@ class MessageContainer(object):
 
 
 class FormatMetaclass(type):
-    """ Some voodoo; I forgot tbh. """
+    """ Injects runtime definitions into the class.
+
+    Specifically, this is what happens:
+        - `RAW_FORMAT`, a list of `struct` formatters, is turned into a
+          contiguous string called `FORMAT`.
+
+        - `MESSAGE_SIZE` is defined as the length, in bytes, of this
+          specification. If any of the objects in `FORMAT` take a variable size,
+          such as variable-length strings (which could, for example, be defined
+          as "str:H:%ds"), they are assumed to be zero-length. Thus, it's more
+          accurate to say `MIN_MESSAGE_SIZE`, I guess.
+
+        - `EMBED_FORMAT` is defined as a raw byte-format for the message, if you
+          were to inject the raw thing into another message (without any regard
+          for byte-packing). This is just a `MESSAGE_SIZE`-length bytestring.
+    """
     def __new__(cls, clsname, bases, dct):
         fmt = ''.join(dct["RAW_FORMAT"])
         dct["FORMAT"] = fmt
@@ -396,6 +411,8 @@ class FormatMetaclass(type):
             ]))
         else:
             dct["MESSAGE_SIZE"] = struct.calcsize('!' + fmt)
+        dct["EMBED_FORMAT"] = "%ds" % dct["MESSAGE_SIZE"]
+
         return type.__new__(cls, clsname, bases, dct)
 
 
@@ -405,7 +422,9 @@ class BaseMessage(object):
     __metaclass__ = FormatMetaclass
     RAW_FORMAT = []
 
-    def __init__(self, msg_type): self.type = msg_type
+    def __init__(self, msg_type):
+        self.type = msg_type
+
     def pack(self):     return ""
     def __repr__(self): return str(self)
 

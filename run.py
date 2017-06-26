@@ -4,6 +4,7 @@ import time
 
 import chordlib.localnode
 import chordlib.utils as chutils
+from   chordlib import L
 
 def main(host_address, join_address=None):
     """ Executes a normal Chord workflow.
@@ -27,20 +28,17 @@ def main(host_address, join_address=None):
     socket, and vice-versa.
     """
 
-    print "main(%s, %s)" % (host_address, join_address)
-    root = chordlib.localnode.LocalNode("%s:%d" % host_address,
-                                        bind_addr=host_address)
+    L.info("main(%s, %s)" % (host_address, join_address))
+    root = chordlib.localnode.LocalNode("%s:%d" % host_address, host_address)
 
     if join_address is not None:
         root.join_ring(join_address)
 
-    while True:
-        time.sleep(360)
-        print "root node:", root
-        print "root fing:", root.fingers
-        if join_address is not None:
-            print "join node:", root.peers
-            print "join fing:", root.peers[0].fingers
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        pass
 
     return (root, )
 

@@ -7,6 +7,70 @@ from packetlib import message
 from packetlib import utils as pktutils
 
 
+class PackedObject(object):
+    __metaclass__ = message.FormatMetaclass
+    RAW_FORMAT = []
+
+
+class PackedAddress(PackedObject):
+    """ Describes how to serialize an (IP address, port) pair.
+    """
+    RAW_FORMAT = [
+        "I",    # 32-bit IPv4 address
+        "H"     # 2-byte port
+    ]
+
+    def __init__(self, ip, port):
+        self.address = (ip, port)
+
+    def pack(self):
+        return struct.pack('!' + self.FORMAT,
+            pktutils.ip_to_int(self.address[0]),
+            self.address[1])
+
+    @classmethod
+    def unpack(cls, bytestream):
+        offset = 0
+        get = lambda i: message.MessageContainer.extract_chunk(
+            cls.RAW_FORMAT[i], bytestream, offset)
+
+        ip,     offset = get(0)
+        port,   offset = get(1)
+        return (pktutils.int_to_ip(ip), port), bytestream[offset:]
+
+
+class PackedHash(PackedObject):
+    """ Describes how to serialize a `Hash` object.
+    """
+    RAW_FORMAT = [
+        "H",    # hash length, in bytes (32 for SHA256)
+        "%ds" % (fingertable.BITCOUNT / 8),
+                # SHA256 hash
+    ]
+
+    def __init__(self, hashval):
+        if not isinstance(hashval, fingertable.Hash):
+            raise TypeError("Can only serialize Hash objects.")
+
+        self.hashval = hashval
+
+    def pack(self):
+        return struct.pack('!' + self.FORMAT,
+            len(str(self.hashval)),
+            str(self.hashval))
+
+    @classmethod
+    def unpack(cls, bytestream):
+        offset = 0
+        get = lambda i: message.MessageContainer.extract_chunk(
+            cls.RAW_FORMAT[i], bytestream, offset)
+
+        hashlen, offset = get(0)
+        nhash,   offset = get(1)
+
+        return fingertable.Hash(hashed=nhash), bytestream[offset:]
+
+
 class JoinRequest(message.BaseMessage):
     """ Prepares a JOIN request.
 
@@ -17,49 +81,33 @@ class JoinRequest(message.BaseMessage):
 
     TYPE = message.MessageType.MSG_CH_JOIN
     RAW_FORMAT = [
-        "H",    # hash length, in bytes (32 for SHA256)
-        "%ds" % (fingertable.BITCOUNT / 8),
-                # SHA256 hash
-        "I",    # IPv4 address
-        "H",    # port
+        PackedHash.EMBED_FORMAT,
+        PackedAddress.EMBED_FORMAT
     ]
 
     def __init__(self, node_hash, listener_addr):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
-        if not isinstance(node_hash, int):
-            raise TypeError("Please provide an integer for a hash.")
-
         super(JoinRequest, self).__init__(self.TYPE)
 
-        self.node_hash = fingertable.unpack_string(node_hash)
-        assert len(self.node_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
-
-        self.address = pktutils.ip_to_int(listener_addr[0])
-        self.port = listener_addr[1]
+        self.node_hash = node_hash
+        self.listener = listener_addr
 
     def pack(self):
         return struct.pack('!' + self.FORMAT,
-            len(self.node_hash), self.node_hash, self.address, self.port)
+            PackedHash(self.node_hash).pack(),
+            PackedAddress(*self.listener).pack())
 
     @classmethod
     def unpack(cls, bytestream):
-        offset = 0
-        get = lambda i: message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[i], bytestream, offset)
+        nhash, bytestream = PackedHash.unpack(bytestream)
+        addr, bytestream = PackedAddress.unpack(bytestream)
 
-        hashlen, offset = get(0)
-        nhash,   offset = get(1)
-        ip,      offset = get(2)
-        port,    offset = get(3)
+        assert not bytestream, \
+            "Unpacked JR, but bytes remain: %s" % repr(bytestream)
 
-        j = cls(fingertable.pack_string(nhash), (pktutils.int_to_ip(ip), port))
-        return j
-
-    @property
-    def listener(self):
-        return (pktutils.int_to_ip(self.address), self.port)
+        return cls(nhash, addr)
 
     def __str__(self):
         return "<%s | listen=%s:%d>" % (self.msg_type_str,
@@ -85,17 +133,16 @@ class JoinResponse(message.BaseMessage):
     ENTRY_FORMAT = [
         "I",    # interval start
         "I",    # interval end
-        "I",    # node ip
-        "H",    # node port
-        "%ds",  # hash
+        PackedAddress.EMBED_FORMAT,
+                # node address
+        PackedHash.EMBED_FORMAT
+                # hash
     ]
 
     RAW_FORMAT = [
-        "H",    # hash length, in bytes (32 for SHA256)
-        "%ds" % (fingertable.BITCOUNT / 8),
+        PackedHash.EMBED_FORMAT,
                 # SHA256 hash
-        "I",    # listener ip
-        "H",    # listener port
+        PackedAddress.EMBED_FORMAT,
         "I",    # number of entries in the table, usually BITCOUNT
         # a single table entry, repeated for the number of spec'd times
         "%ds"
@@ -107,7 +154,7 @@ class JoinResponse(message.BaseMessage):
     def __init__(self, node_hash, listener_addr, finger_table=[]):
         """ Creates internal structures, including a fake finger table.
 
-        :node_hash      a string representing the hash bytes
+        :node_hash      a Hash object for the node sending this message
         :listener_addr  a 2-tuple address -- (IP, port) pair
         :finger_table   a list of `chordlib.fingertable.Finger`-like entries
         """
@@ -116,15 +163,11 @@ class JoinResponse(message.BaseMessage):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
-        if not isinstance(node_hash, int):
-            raise TypeError("Please provide an integer for a hash.")
-
-        node_hash = fingertable.unpack_string(node_hash)
-        assert len(node_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
+        if not isinstance(node_hash, fingertable.Hash):
+            raise TypeError("Please provide an hash value for a hash.")
 
         self.node_hash = node_hash
-        self.address = pktutils.ip_to_int(listener_addr[0])
-        self.port = listener_addr[1]
+        self.listener = listener_addr
 
         self.fingers = []
         for entry in finger_table:
@@ -132,55 +175,42 @@ class JoinResponse(message.BaseMessage):
                 entry.node.local_addr, entry.node.hash))
 
     def pack(self):
-        hash_bytes = fingertable.BITCOUNT / 8
         entry_bytes = ''.join([
-            struct.pack('!' + (''.join(self.ENTRY_FORMAT) % hash_bytes),
-                entry.start, entry.end, pktutils.ip_to_int(entry.addr[0]),
-                entry.addr[1], entry.hash
+            struct.pack('!' + ''.join(self.ENTRY_FORMAT),
+                entry.start, entry.end,
+                PackedAddress(entry.addr).pack(),
+                PackedHash(entry.hash).pack()
             ) for entry in self.fingers
         ])
 
-        pkt = struct.pack('!' + (self.FORMAT % len(entry_bytes)),
-            hash_bytes, self.node_hash, pktutils.ip_to_int(self.listener[0]) \
-                if not isinstance(self.listener[0], int) else self.listener[0],
-            self.listener[1], len(self.fingers), entry_bytes)
+        pkt = struct.pack('!' + self.FORMAT % len(entry_bytes),
+            PackedHash(self.node_hash).pack(),
+            PackedAddress(*self.listener).pack(),
+            len(self.fingers), entry_bytes)
 
         return pkt
 
     @classmethod
     def unpack(cls, bytestream):
-        offset = 0
-        get = lambda idx: message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[idx], bytestream, offset)
+        hash_val, bytestream = PackedHash.unpack(bytestream)
+        listener, bytestream = PackedAddress.unpack(bytestream)
+        finger_cnt, offset   = message.MessageContainer.extract_chunk(
+            cls.RAW_FORMAT[2], bytestream, 0)
 
-        hash_length, offset = get(0)
-        hash_value,  offset = get(1)
-        listener_ip, offset = get(2)
-        listener_pt, offset = get(3)
-        finger_cnt,  offset = get(4)
-
-        offset = 0
         get = lambda idx: message.MessageContainer.extract_chunk(
             cls.ENTRY_FORMAT[idx], bytestream, offset)
 
         fingers = []
         for i in xrange(finger_cnt):
-            interval_st, offset = get(0)
-            interval_ed, offset = get(1)
-            node_ip,     offset = get(2)
-            node_pt,     offset = get(3)
-            hash_val,    offset = int(message.MessageContainer.extract_chunk(
-                cls.ENTRY_FORMAT[4] % hash_length, bytestream, offset))
+            interval_st, offset  = get(0)
+            interval_ed, offset  = get(1)
+            addr, bytestream     = PackedAddress.unpack(bytestream)
+            hash_val, bytestream = PackedHash.unpack(bytestream)
 
-            node = cls.FAKE_NODE((pktutils.int_to_ip(node_ip), node_pt), hash_val)
+            node = cls.FAKE_NODE(addr, hash_val)
             fingers.append(fingertable.Finger(interval_st, interval_ed, node))
 
-        return cls(fingertable.pack_string(hash_value),
-            (pktutils.int_to_ip(listener_ip), listener_pt), fingers)
-
-    @property
-    def listener(self):
-        return (pktutils.int_to_ip(self.address), self.port)
+        return cls(hash_val, listener, fingers)
 
     def __str__(self):
         return "<%s | Node (%s:%d),hash=%s,fingers=%d>" % (

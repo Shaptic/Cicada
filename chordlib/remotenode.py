@@ -32,9 +32,9 @@ that exists elsewhere.
 import select
 import socket
 
-from   chordlib  import commlib
-from   chordlib  import chordnode
-
+from chordlib import commlib
+from chordlib import chordnode
+from chordlib import fingertable
 
 class RemoteNode(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
@@ -77,8 +77,12 @@ class RemoteNode(chordnode.ChordNode):
         self.remote_addr = remote_addr
         self.complete = False   # set when the socket closes
 
-        super(RemoteNode, self).__init__("", peer_listener_addr)
-        self.hash = node_hash
+        if node_hash is None:   # not set for peer on first join
+            self._hash = fingertable.Hash(value="notset")
+        else:
+            self._hash = fingertable.Hash(hashed=node_hash)
+
+        super(RemoteNode, self).__init__(peer_listener_addr)
 
     def __str__(self):
         return "<RemoteNode | %s>" % super(RemoteNode, self).__str__()

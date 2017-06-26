@@ -90,7 +90,6 @@ def visuals(ring):
                         collider.selected = True
 
                     else:
-                        import pdb; pdb.set_trace()
                         collider.join_ring(selected_node)
 
         window.fill((255, 255, 255))

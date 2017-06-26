@@ -10,17 +10,17 @@ ring.
 This is a list for development, as opposed to the README list which is more of a
 "big picture" list for full modules and concepts.
 
-- [ ] Why does this cause a crash?
+- [?] Why does this cause a crash?
             thumb.node = self.fingers.find_successor(thumb.start)
       Only sometimes, with two nodes -- seems consistent with 3+ nodes.
 - [*] Figure out why the NOTIFY message sends every time -- in theory, we should
       only need to send it when we know that the node doesn't know about us.
 - [ ] In `on_info_response`, actually parse and process the message and fill the
       local node reference with the updated information.
-- [ ] Optimize hashing to not pack/unpack unecessarily. I probably need to add
+- [*] Optimize hashing to not pack/unpack unecessarily. I probably need to add
       some sort of `Hash` object -- this way, I can preserve the previous info
       in addition to the hash itself.
-- [ ] Add more verbose / informative `level=INFO` logging.
+- [*] Add more verbose / informative `level=INFO` logging.
 - [ ] Add custom exceptions for the Chord protocol aspects itself, rather than
       just various `UnpackException`s.
 """
@@ -68,7 +68,7 @@ class LocalNode(chordnode.ChordNode):
     """ Represents the current local node in the Chord hash ring.
     """
 
-    def __init__(self, data, bind_addr=('localhost', 2017)):
+    def __init__(self, data, bind_addr):
         """ Creates a node on a specific address with specific data.
 
         Typically, the data that you pass is simply a string representation of
@@ -102,7 +102,9 @@ class LocalNode(chordnode.ChordNode):
         # These are all of the known direct neighbors in the Chord ring.
         self.peers = []
 
-        super(LocalNode, self).__init__(data, bind_addr)
+        self._hash = fingertable.Hash(data)
+        super(LocalNode, self).__init__(bind_addr)
+        self.data = data
 
         # This thread periodically performs the stabilization algorithm.
         self.stable = chordnode.Stabilizer(self)
@@ -139,7 +141,7 @@ class LocalNode(chordnode.ChordNode):
         #
 
         L.info("Joining peer ring via %s:%d.", *remote_address)
-        joiner_peer = self.add_peer(0, remote_address, remote_address)
+        joiner_peer = self.add_peer(remote_address, remote_address)
         join_msg = chordpkt.JoinRequest.make_packet(self.hash, self.local_addr)
         if not self.processor.request(joiner_peer.peer_sock, join_msg,
                                       self.on_join_response, timeout):
@@ -147,7 +149,7 @@ class LocalNode(chordnode.ChordNode):
 
         return join_msg
 
-    def add_peer(self, hash, address, listener, peer_socket=None):
+    def add_peer(self, address, listener, peer_socket=None, peer_hash=None):
         """ From an arbitrary remote address, add a RemoteNode to the ring.
         """
         L.debug("add_peer::hash: %s", hash)
@@ -155,7 +157,7 @@ class LocalNode(chordnode.ChordNode):
         L.debug("add_peer::listener_addr: %s", listener)
         L.debug("add_peer::peer_socket: %s", peer_socket)
 
-        p = remotenode.RemoteNode(hash, address, listener,
+        p = remotenode.RemoteNode(peer_hash, address, listener,
             existing_socket=peer_socket)
 
         self.peers.append(p)
@@ -219,6 +221,7 @@ class LocalNode(chordnode.ChordNode):
         # case we should tell them about us, at least! That way, the ring is
         # linked.
         if self.successor.predecessor is None:
+            L.info("Requesting our successor for neighbor info.")
             info_msg = chordpkt.InfoRequest.make_packet()
             info_rsp = self.processor.request(self.successor.peer_sock,
                 info_msg, self.on_info_response, wait_time=5)
@@ -236,7 +239,8 @@ class LocalNode(chordnode.ChordNode):
         # predecessor is us (as it would be in the normal case), we'd be setting
         # us as our own successor!
         if self.fingers.local.within_open(x.hash):
-            self.fingers.set_successor(x)
+            L.critical("Entering a NotImplemented code path! :)")
+            # self.fingers.set_successor(x)
 
         if self.successor.predecessor.hash == self.hash:
             L.debug("Nothing to notify -- we are successor.predecessor")
@@ -261,15 +265,12 @@ class LocalNode(chordnode.ChordNode):
         if thumb.node is None:
             return
 
-        # self.pr("fix_fingers: fixing finger(%d)" % index)
-        # self.pr("fix_fingers: fingers are\n%s" % self.fingers)
         try:
             thumb.node = self.fingers.find_successor(thumb.start)
         except AttributeError:
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
+            L.warning("Finding the successor of %s failed.", thumb)
             return
-
-        # self.pr("fix_fingers: fingers are now\n%s" % self.fingers)
 
     def process(self, peer_socket, msg):
         if peer_socket is None:     # socket closed?
@@ -335,10 +336,9 @@ class LocalNode(chordnode.ChordNode):
         L.debug("on_info_response::msg:  %s", msg)
 
         info_resp = chordpkt.InfoResponse.unpack(msg.data)
-        info_resp.node_hash = fingertable.pack_string(info_resp.node_hash)
 
         L.info("Received info from a peer:")
-        L.info("    Hash: %d", info_resp.node_hash)
+        L.info("    Successor hash: %d", info_resp.node_hash)
         L.info("    Successor listening on: %s:%d", *info_resp.listener)
 
         return info_resp
@@ -364,10 +364,9 @@ class LocalNode(chordnode.ChordNode):
         L.info("Peer (%s:%d) requested to join the network.", *sock.getpeername())
 
         req = chordpkt.JoinRequest.unpack(msg.data)
-        req.node_hash = fingertable.pack_string(req.node_hash)
 
         # Always add node, because it could be better than some existing ones.
-        p = self.add_peer(req.node_hash, sock.getpeername(), req.listener, sock)
+        p = self.add_peer(sock.getpeername(), req.listener, sock, req.node_hash)
         self.add_node(p)
 
         # Is this node closer to us than our existing predecessor?
@@ -405,7 +404,6 @@ class LocalNode(chordnode.ChordNode):
         L.debug("join_response::msg:  %s", msg)
 
         joinr_msg = chordpkt.JoinResponse.unpack(msg.data)
-        joinr_msg.node_hash = fingertable.pack_string(joinr_msg.node_hash)
 
         L.info("We have been permitted to join the network:")
         L.info("    Successor hash: %d", joinr_msg.node_hash)
@@ -419,12 +417,12 @@ class LocalNode(chordnode.ChordNode):
             # We set an empty hash when we added the peer, so now we need to
             # update it to be accurate.
             L.info("    Updating hash, though!")
-            result.hash = joinr_msg.node_hash
+            result._hash = joinr_msg.node_hash
 
         else:
             L.info("    Connecting to our provided successor.")
-            result = self.add_peer(joinr_msg.node_hash, sock.getsockname(),
-                joinr_msg.listener)
+            result = self.add_peer(sock.getsockname(), joinr_msg.listener,
+                peer_hash=joinr_msg.node_hash)
 
         assert result.hash == joinr_msg.node_hash, \
             "Hashes don't match! %s vs. %s" % (repr(result.hash),
