@@ -10,7 +10,12 @@ ring.
 This is a list for development, as opposed to the README list which is more of a
 "big picture" list for full modules and concepts.
 
-- [?] Why does this cause a crash?
+- [ ] Allow sending `None` for predecessor or successor fields in the messages.
+- [ ] Consolidate all of the code that uses the JOIN-RESP message format to
+      process internal state.
+- [ ] Consolidate the remote lookup code from `fix_fingers` and
+      `on_lookup_request` into a single location.
+- [*] Why does this cause a crash?
             thumb.node = self.fingers.find_successor(thumb.start)
       Only sometimes, with two nodes -- seems consistent with 3+ nodes.
 - [*] Figure out why the NOTIFY message sends every time -- in theory, we should
@@ -104,6 +109,7 @@ class LocalNode(chordnode.ChordNode):
 
         self._hash = fingertable.Hash(data)
         super(LocalNode, self).__init__(bind_addr)
+        L.info("Created Chord peer with hash: %d", self.hash)
         self.data = data
 
         # This thread periodically performs the stabilization algorithm.
@@ -297,7 +303,7 @@ class LocalNode(chordnode.ChordNode):
             assert thumb.start == lookup_rsp.lookup
 
             L.info("Completed lookup for hash=%d:", lookup_rsp.lookup)
-            L.info("    The first hop was: %d", lookup_rsp.node)
+            L.info("    The first hop was: %d", lookup_rsp.sender)
             L.info("    The hash of the neighbor is: %d", lookup_rsp.mapped)
             L.info("    The nearest neighbor is listening on: %s:%d", *lookup_rsp.listener)
 
@@ -350,19 +356,27 @@ class LocalNode(chordnode.ChordNode):
 
     def on_info_request(self, sock, msg):
         if self.predecessor is None:
-            pred_addr = self.listener.getsockname()
+            pred = remotenode.RemoteNode(self.hash, self.listener.getsockname(),
+                self.listener.getsockname(), self.listener)
         else:
-            pred_addr = self.predecessor.remote_addr
+            pred = self.predecessor
+
+        if self.successor is None:
+            succ = remotenode.RemoteNode(fingertable.Hash(value="000"),
+                ("localhost", 0), ("localhost", 0), 0xFF)
+                # 0xFF = fake socket identifier
+        else:
+            succ = self.successor
 
         infor_msg = chordpkt.InfoResponse.make_packet(
-            self.hash, self.successor.hash, self.successor.remote_addr,
-            original=msg)
+            self.hash, succ, pred, original=msg)
 
-        L.info("Peer (%s:%d) requested info about us, replying...", *sock.getpeername())
+        L.info("Peer (%s:%d) requested info about us, replying...",
+               *sock.getpeername())
         L.info("Our details:")
         L.info("    Hash: %d", self.hash)
-        L.info("    Predecessor: %s", self.predecessor)
-        L.info("    Successor: %s", self.successor)
+        L.info("    Predecessor: %s", pred)
+        L.info("    Successor: %s", succ)
 
         self.processor.response(sock, infor_msg)
         return True
@@ -376,13 +390,18 @@ class LocalNode(chordnode.ChordNode):
 
         info_resp = chordpkt.InfoResponse.unpack(msg.data)
 
-        L.info("Received info from a peer: %d", info_resp.sender_hash)
+        L.info("Received info from a peer: %d", info_resp.sender)
         L.info("    Successor hash: %d", info_resp.succ_hash)
-        L.info("    Successor listening on: %s:%d", *info_resp.listener)
+        L.info("    Successor listening on: %s:%d", *info_resp.succ_addr)
+        L.info("    Predecessor hash: %d", info_resp.pred_hash)
+        L.info("    Predecessor address: %s:%d", *info_resp.pred_addr)
 
-        assert node.hash == info_resp.sender_hash, "Hashes don't match!"
+        assert node.hash == info_resp.sender, "Hashes don't match!"
 
-        # node.
+        if node.successor is not None:
+            node.fingers.remove(node.successor)
+        node.fingers.insert(info_resp.successor)
+        node.predecessor = info_resp.predecessor
 
         return info_resp
 
@@ -409,12 +428,15 @@ class LocalNode(chordnode.ChordNode):
         req = chordpkt.JoinRequest.unpack(msg.data)
 
         # Always add node, because it could be better than some existing ones.
-        p = self.add_peer(sock.getpeername(), req.listener, sock, req.node_hash)
+        p = self.add_peer(sock.getpeername(), req.listener, sock, req.sender)
         self.add_node(p)
+
+        assert p.hash == req.sender
 
         # Is this node closer to us than our existing predecessor?
         if self.predecessor is None or \
            fingertable.Interval(self.predecessor.hash, self.hash).within(p.hash):
+            L.info("Setting joinee as our predecessor!")
             self.predecessor = p
 
         # If our successor doesn't exist, or matches the address of the
@@ -430,12 +452,20 @@ class LocalNode(chordnode.ChordNode):
 
         L.info("Allowing connection and responding with our details:")
         L.info("    Our hash: %d", self.hash)
+        L.info("    Our successor hash: %d", self.successor.hash)
+        L.info("    Our successor listener: %s:%d",
+            *self.successor.local_addr)
+        L.info("    Our predecessor hash: %d", self.predecessor.hash)
+        L.info("    Our predecessor listener: %s:%d",
+            *self.predecessor.local_addr)
         L.info("    Requestee successor hash: %d", response_object.hash)
         L.info("    Requestee successor listener: %s:%d",
             *response_object.local_addr)
 
-        response = chordpkt.JoinResponse.make_packet(self.hash,
-            response_object.hash, response_object.local_addr, original=msg)
+        response = chordpkt.JoinResponse.make_packet(response_object,
+            self.hash, self.predecessor, self.successor, original=msg)
+
+        assert self.predecessor != self
 
         self.processor.response(sock, response)
         return True
@@ -450,27 +480,28 @@ class LocalNode(chordnode.ChordNode):
         joinr_msg = chordpkt.JoinResponse.unpack(msg.data)
 
         L.info("We have been permitted to join the network:")
-        L.info("    From peer with hash: %d", joinr_msg.sender_hash)
-        L.info("    Successor hash: %d", joinr_msg.succ_hash)
-        L.info("    Successor address: %s:%d", *joinr_msg.listener)
+        L.info("    From peer with hash: %d", joinr_msg.sender)
+        L.info("    Sender successor hash: %d",        joinr_msg.succ_hash)
+        L.info("    Sender successor address: %s:%d", *joinr_msg.succ_addr)
+        L.info("    Sender predecessor hash: %d",        joinr_msg.pred_hash)
+        L.info("    Sender predecessor address: %s:%d", *joinr_msg.pred_addr)
+        L.info("    Our new predecessor hash: %d",        joinr_msg.req_succ_hash)
+        L.info("    Our new predecessor address: %s:%d", *joinr_msg.req_succ_addr)
 
-        result = self._peerlist_contains(joinr_msg.listener)
+        result = self._peerlist_contains(joinr_msg.req_succ_addr)
         if result is not None:
             L.info("    We already know about this peer.")
             L.info("    This means they are the closest node to us!")
 
             # We set an empty hash when we added the peer, so now we need to
             # update it to be accurate.
-            result._hash = joinr_msg.succ_hash
+            result._hash = joinr_msg.request_successor.hash
 
         else:
             L.info("    Connecting to our provided successor.")
-            result = self.add_peer(sock.getsockname(), joinr_msg.listener,
-                peer_hash=joinr_msg.succ_hash)
-
-        assert result.hash == joinr_msg.succ_hash, \
-            "Hashes don't match! %s vs. %s" % (repr(result.hash),
-                repr(joinr_msg.succ_hash))
+            result = self.add_peer(sock.getsockname(),
+                joinr_msg.request_successor.local_addr,
+                peer_hash=joinr_msg.request_successor.hash)
 
         self.add_node(result)
 
@@ -512,8 +543,23 @@ class LocalNode(chordnode.ChordNode):
         self.processor.response(sock, notify_msg)
         return True
 
-    def on_notify_response(self, sock, msg):
+    @prevent_nonpeers
+    def on_notify_response(self, sock, node, msg):
         notif_msg = chordpkt.NotifyResponse.unpack(msg.data)
+
+        L.info("Received a notification from a peer: %d", notif_msg.sender)
+        L.info("    Successor hash: %d", notif_msg.succ_hash)
+        L.info("    Successor listening on: %s:%d", *notif_msg.listener)
+        L.info("    Predecessor hash: %d", notif_msg.pred_hash)
+        L.info("    Predecessor address: %s:%d", *notif_msg.pred_addr)
+
+        assert node.hash == notif_msg.node_hash, "Hashes don't match!"
+
+        node.fingers.remove(node.successor)
+        node.fingers.insert(notif_msg.successor)
+        node.predecessor = notif_msg.predecessor
+
+        return notif_msg
 
     def on_lookup_request(self, sock, msg):
         """ TODO: Make this work asynchronously (ex: `self.pending_lookups`).

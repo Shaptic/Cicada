@@ -71,6 +71,72 @@ class PackedHash(PackedObject):
         return fingertable.Hash(hashed=nhash), bytestream[offset:]
 
 
+class InfoRequest(message.BaseMessage):
+    RAW_FORMAT = []
+    TYPE = message.MessageType.MSG_CH_INFO
+
+    def __init__(self):
+        super(InfoRequest, self).__init__(self.TYPE)
+
+
+class InfoResponse(message.BaseMessage):
+    RAW_FORMAT = [
+        PackedHash.EMBED_FORMAT,        # sender hash
+
+        PackedHash.EMBED_FORMAT,        # sender's predecessor hash
+        PackedAddress.EMBED_FORMAT,     # ^ address
+
+        PackedHash.EMBED_FORMAT,        # sender's successor hash
+        PackedAddress.EMBED_FORMAT,     # ^ address
+    ]
+    TYPE = message.MessageType.MSG_CH_INFOR
+
+    def __init__(self, sender, pred, succ):
+        """ Creates internal structures for the INFO message.
+
+        :sender     a `Hash` of the peer sending this message
+        :succ       successor node (inc. hash + listener address)
+        :pred       predecessor node (inc. hash + listener address)
+        """
+        super(InfoResponse, self).__init__(self.TYPE)
+
+        if any([not isinstance(x, fingertable.Hash) for x in (
+            sender, succ.hash, pred.hash)
+        ]):
+            raise TypeError("Please provide a Hash object.")
+
+        self.successor = succ
+        self.predecessor = pred
+
+        self.sender = sender
+        self.succ_hash = succ.hash
+        self.pred_hash = pred.hash
+        self.succ_addr = succ.local_addr
+        self.pred_addr = pred.local_addr
+
+    def pack(self):
+        return struct.pack('!' + self.FORMAT,
+            PackedHash(self.sender).pack(),
+            PackedHash(self.pred_hash).pack(),
+            PackedAddress(*self.pred_addr).pack(),
+            PackedHash(self.succ_hash).pack(),
+            PackedAddress(*self.succ_addr).pack())
+
+    @classmethod
+    def unpack(cls, bytestream):
+        send_hash, bytestream = PackedHash.unpack(bytestream)
+        pred_hash, bytestream = PackedHash.unpack(bytestream)
+        pred_addr, bytestream = PackedAddress.unpack(bytestream)
+        succ_hash, bytestream = PackedHash.unpack(bytestream)
+        succ_addr, bytestream = PackedAddress.unpack(bytestream)
+
+        FakeSocket = 0xFA#KE
+        pn = remotenode.RemoteNode(pred_hash, pred_addr, pred_addr, FakeSocket)
+        sn = remotenode.RemoteNode(succ_hash, succ_addr, succ_addr, FakeSocket)
+
+        return cls(send_hash, pn, sn)
+
+
 class JoinRequest(message.BaseMessage):
     """ Prepares a JOIN request.
 
@@ -85,158 +151,74 @@ class JoinRequest(message.BaseMessage):
         PackedAddress.EMBED_FORMAT
     ]
 
-    def __init__(self, node_hash, listener_addr):
+    def __init__(self, sender_hash, listener_addr):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
         super(JoinRequest, self).__init__(self.TYPE)
 
-        self.node_hash = node_hash
+        self.sender = sender_hash
         self.listener = listener_addr
 
     def pack(self):
         return struct.pack('!' + self.FORMAT,
-            PackedHash(self.node_hash).pack(),
+            PackedHash(self.sender).pack(),
             PackedAddress(*self.listener).pack())
 
     @classmethod
     def unpack(cls, bytestream):
-        nhash, bytestream = PackedHash.unpack(bytestream)
+        shash, bytestream = PackedHash.unpack(bytestream)
         addr, bytestream = PackedAddress.unpack(bytestream)
 
         assert not bytestream, \
             "Unpacked JR, but bytes remain: %s" % repr(bytestream)
 
-        return cls(nhash, addr)
-
-    def __str__(self):
-        return "<%s | listen=%s:%d>" % (self.msg_type_str,
-            self.listener[0], self.listener[1])
+        return cls(shash, addr)
 
 
-class JoinResponse(message.BaseMessage):
-    """ Prepares a JOIN-RESP response packet.
-
-    The response contains full metadata information about the node. This
-    includes:
-        - The hash length specifier, 2 bytes
-        - The peer hash, based on the hash length.
-        - Finger table:
-            - finger table entry count, 4 bytes
-            - the finger table entries, which is an interval, split into two
-              4-byte integers outlining the range, as well as the hash and
-              remote address of the peer responsible for that interval.
-        - The peer listener socket, for other nodes to join.
-    """
-
-    TYPE = message.MessageType.MSG_CH_JOINR
-    ENTRY_FORMAT = [
-        "I",    # interval start
-        "I",    # interval end
-        PackedAddress.EMBED_FORMAT,
-                # node address
-        PackedHash.EMBED_FORMAT
-                # hash
-    ]
-
+class JoinResponse(InfoResponse):
     RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,    # hash of the sender
-        PackedHash.EMBED_FORMAT,    # hash of the would-be successor
-        PackedAddress.EMBED_FORMAT, # listener address of the would-be successor
-        "I",    # number of entries in the table, usually BITCOUNT
-        # a single table entry, repeated for the number of spec'd times
-        "%ds"
+        InfoResponse.EMBED_FORMAT,
+        PackedHash.EMBED_FORMAT,        # requestor's successor hash
+        PackedAddress.EMBED_FORMAT,     # ^ address
     ]
+    TYPE = message.MessageType.MSG_CH_JOINR
 
-    ENTRY = collections.namedtuple("Finger", "start end addr hash")
-    FAKE_NODE = collections.namedtuple("Node", "local_addr hash")
+    def __init__(self, req_succ, *args):
+        """ Prepares a respones to a JOIN request.
 
-    def __init__(self, sender_hash, succ_hash, listener_addr, finger_table=[]):
-        """ Creates internal structures, including a fake finger table.
-
-        :sender_hash    a Hash object for the node sending this message
-        :succ_hash      a Hash object of the successor of the requestor
-        :listener_addr  a 2-tuple address -- (IP, port) pair
-        :finger_table   a list of `chordlib.fingertable.Finger`-like entries
+        :req_succ   a node corresponding to a successor of the JOIN sender
+        :args       the remaining parameters are sent directly to InfoResponse
         """
-        super(JoinResponse, self).__init__(self.TYPE)
-
-        if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
-            raise TypeError("Please pass a two-tuple address!")
-
-        if not isinstance(sender_hash, fingertable.Hash) or \
-           not isinstance(succ_hash, fingertable.Hash):
-            raise TypeError("Please provide a Hash object as the value.")
-
-        self.sender_hash = sender_hash
-        self.succ_hash = succ_hash
-        self.listener = listener_addr
-
-        self.fingers = []
-        for entry in finger_table:
-            self.fingers.append(self.ENTRY(entry.start, entry.end,
-                entry.node.local_addr, entry.node.hash))
+        super(JoinResponse, self).__init__(*args)
+        self.request_successor = req_succ
+        self.req_succ_hash = req_succ.hash
+        self.req_succ_addr = req_succ.local_addr
 
     def pack(self):
-        entry_bytes = ''.join([
-            struct.pack('!' + ''.join(self.ENTRY_FORMAT),
-                entry.start, entry.end,
-                PackedAddress(*entry.addr).pack(),
-                PackedHash(entry.hash).pack()
-            ) for entry in self.fingers
-        ])
+        old_fmt = self.FORMAT
+        self.FORMAT = InfoResponse.FORMAT
+        embedded  = super(JoinResponse, self).pack()
+        self.FORMAT = old_fmt
 
-        pkt = struct.pack('!' + self.FORMAT % len(entry_bytes),
-            PackedHash(self.sender_hash).pack(),
-            PackedHash(self.succ_hash).pack(),
-            PackedAddress(*self.listener).pack(),
-            len(self.fingers), entry_bytes)
-
-        return pkt
+        return struct.pack('!' + self.FORMAT,
+            embedded,
+            PackedHash(self.request_successor.hash).pack(),
+            PackedAddress(*self.request_successor.local_addr).pack())
 
     @classmethod
     def unpack(cls, bytestream):
-        send_hash, bytestream = PackedHash.unpack(bytestream)
-        succ_hash, bytestream = PackedHash.unpack(bytestream)
-        listener, bytestream  = PackedAddress.unpack(bytestream)
-        finger_cnt, offset    = message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[3], bytestream, 0)
+        info = InfoResponse.unpack(bytestream)
 
-        get = lambda idx: message.MessageContainer.extract_chunk(
-            cls.ENTRY_FORMAT[idx], bytestream, offset)
+        bytestream = bytestream[len(info.pack()):]  # inefficient but idc tbh
+        req_succ_hash, bytestream = PackedHash.unpack(bytestream)
+        req_succ_addr, bytestream = PackedAddress.unpack(bytestream)
 
-        fingers = []
-        for i in xrange(finger_cnt):
-            interval_st, offset  = get(0)
-            interval_ed, offset  = get(1)
-            addr, bytestream     = PackedAddress.unpack(bytestream)
-            hash_val, bytestream = PackedHash.unpack(bytestream)
+        FakeSocket = 0xFA#KE
+        rsn = remotenode.RemoteNode(req_succ_hash,
+            req_succ_addr, req_succ_addr, FakeSocket)
 
-            node = cls.FAKE_NODE(addr, hash_val)
-            fingers.append(fingertable.Finger(interval_st, interval_ed, node))
-
-        return cls(send_hash, succ_hash, listener, fingers)
-
-    def __str__(self):
-        return "<%s | Node (%s:%d),hash=%s,fingers=%d>" % (
-            self.msg_type_str, self.listener[0], self.listener[1],
-            str(self.sender_hash)[:8], len(self.fingers))
-
-
-class InfoRequest(message.BaseMessage):
-    RAW_FORMAT = []
-    TYPE = message.MessageType.MSG_CH_INFO
-
-    def __init__(self):
-        super(InfoRequest, self).__init__(self.TYPE)
-
-
-class InfoResponse(JoinResponse):
-    RAW_FORMAT = JoinResponse.RAW_FORMAT
-    TYPE = message.MessageType.MSG_CH_INFOR
-
-    def __init__(self, *args):
-        super(InfoResponse, self).__init__(*args)
+        return cls(rsn, info.sender, info.predecessor, info.successor)
 
 
 class NotifyRequest(message.BaseMessage):
@@ -247,61 +229,12 @@ class NotifyRequest(message.BaseMessage):
         super(NotifyRequest, self).__init__(self.TYPE)
 
 
-class NotifyResponse(message.BaseMessage):
-    RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,        # sender hash
-
-        PackedHash.EMBED_FORMAT,        # predecessor hash
-        PackedAddress.EMBED_FORMAT,     # ^ address
-
-        PackedHash.EMBED_FORMAT,        # successor hash
-        PackedAddress.EMBED_FORMAT,     # ^ address
-    ]
+class NotifyResponse(JoinResponse):
+    RAW_FORMAT = JoinResponse.RAW_FORMAT
     TYPE = message.MessageType.MSG_CH_NOTIFYR
 
-    def __init__(self, node_hash, succ, pred):
-        """ Creates internal structures, including a fake finger table.
-
-        :node_hash  a string representing the hash bytes
-        :succ       successor node (inc. hash + listener address)
-        :pred       predecessor node (inc. hash + listener address)
-        """
+    def __init__(self, *args):
         super(NotifyResponse, self).__init__(self.TYPE)
-
-        if any([not isinstance(x, fingertable.Hash) for x in (
-            node_hash, succ.hash, pred.hash)
-        ]):
-            raise TypeError("Please provide a Hash object.")
-
-        self.node_hash = node_hash
-        self.succ_hash = succ.hash
-        self.pred_hash = pred.hash
-        self.succ_addr = succ.local_addr
-        self.pred_addr = pred.local_addr
-
-    def pack(self):
-        return struct.pack('!' + self.FORMAT,
-            PackedHash(self.node_hash).pack(),
-
-            PackedHash(self.pred_hash).pack(),
-            PackedAddress(*self.pred_addr).pack(),
-
-            PackedHash(self.succ_hash).pack(),
-            PackedAddress(*self.succ_addr).pack())
-
-    @classmethod
-    def unpack(cls, bytestream):
-        node_hash, bytestream = PackedHash(bytestream)
-        pred_hash, bytestream = PackedHash(bytestream)
-        pred_addr, bytestream = PackedAddress(bytestream)
-        succ_hash, bytestream = PackedHash(bytestream)
-        succ_addr, bytestream = PackedAddress(bytestream)
-
-        FakeSocket = 0xFA#KE
-        pn = remotenode.RemoteNode(pred_hash, pred_addr, pred_addr, FakeSocket)
-        sn = remotenode.RemoteNode(succ_hash, succ_addr, succ_addr, FakeSocket)
-
-        return cls(node_hash, pn, sn)
 
 
 class LookupRequest(message.BaseMessage):
@@ -351,7 +284,7 @@ class LookupResponse(message.BaseMessage):
         ]):
             raise TypeError("Please provide a Hash object.")
 
-        self.node = sender_hash
+        self.sender = sender_hash
         self.lookup = lookup_hash
         self.mapped = mapped_hash
         self.listener = mapped_address

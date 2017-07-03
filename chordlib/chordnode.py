@@ -70,7 +70,7 @@ class ChordNode(object):
 
     @property
     def successor(self):
-        assert self.fingers.real_length >= 1, "successor: node is isolated!"
+        # assert self.fingers.real_length >= 1, "successor: node is isolated!"
         return self.finger(0).node
 
     @property

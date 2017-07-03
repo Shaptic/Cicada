@@ -429,7 +429,7 @@ class BaseMessage(object):
     def __init__(self, msg_type):
         self.type = msg_type
 
-    def pack(self):     return ""
+    def pack(self): return ""
     def __repr__(self): return str(self)
 
     @classmethod
