@@ -6,6 +6,7 @@ import socket
 import random
 import time
 
+from chordlib import L
 from chordlib import commlib
 from chordlib import fingertable
 from chordlib import utils as chutils
@@ -43,6 +44,18 @@ class ChordNode(object):
         self.local_addr = (socket.gethostbyname(listener_addr[0]),
                            listener_addr[1])
 
+    def add_node(self, node):
+        """ Adds a node to the internal finger table.
+
+        This means proper ordering in the finger table with respect to the
+        node's hash value.
+        """
+        L.debug("add_node::self: %s", str(self))
+        L.debug("add_node::node: %s", str(node))
+        assert isinstance(node, ChordNode), "add_node: not a ChordNode object!"
+
+        self.fingers.insert(node)
+
     def join_ring(self, address):
         """ Joins a Chord ring via a node in the ring. """
         raise NotImplementedError
@@ -63,6 +76,8 @@ class ChordNode(object):
     @property
     def hash(self):
         return self._hash   # undefined in this class
+
+    def __repr__(self): return str(self)
 
 
 def walk_ring(root, maxcount=10):

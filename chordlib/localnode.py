@@ -166,19 +166,6 @@ class LocalNode(chordnode.ChordNode):
 
         return p
 
-    def add_node(self, node):
-        """ Adds a node to the internal finger table.
-
-        This means proper ordering in the finger table with respect to the
-        node's hash value.
-        """
-        L.debug("add_node::self: %s", str(self))
-        L.debug("add_node::node: %s", str(node))
-        assert isinstance(node, chordnode.ChordNode), \
-               "add_node: not a ChordNode object!"
-
-        self.fingers.insert(node)
-
     def remove_node(self, node):
         """ Indicates a node has disconnected / failed in the Chord ring.
         """
@@ -272,12 +259,53 @@ class LocalNode(chordnode.ChordNode):
         if thumb.node is None:
             return
 
-        try:
-            thumb.node = self.fingers.find_successor(thumb.start)
-        except AttributeError:
+        L.info("Looking up successor of %d[i=%d] to validate routing table.",
+               thumb.start, index)
+
+        # Only look up the predecessor because if it doesn't exist locally, the
+        # successor will be `None`.
+        predecessor = self.fingers.find_predecessor(thumb.start)
+
+        # Perform iterative lookup for nodes that we need more information on.
+        if isinstance(predecessor, remotenode.RemoteNode) and \
+           predecessor.successor is None:
+
+            L.info("    Failed to look up locally!")
+            L.info("    The nearest local neighbor is: %d", predecessor.hash)
+            L.info("    Performing a remote lookup!")
+
             # import pdb; pdb.set_trace()
-            L.warning("Finding the successor of %s failed.", thumb)
-            return
+            lookup_msg = chordpkt.LookupRequest.make_packet(self.hash,
+                fingertable.Hash(hashed=thumb.start))
+
+            response_data = []
+            def callback(*args):
+                for item in args: response_data.append(item)
+                return True
+
+            result = self.processor.request(predecessor.peer_sock,
+                lookup_msg, callback, wait_time=120)
+
+
+            if not result or not response_data:
+                L.warning("Finding the successor of %s[%d] failed.", thumb, index)
+                import pdb; pdb.set_trace()
+                raise ValueError("Failed to look up successor!")
+
+            lookup_rsp = chordpkt.LookupResponse.unpack(response_data[1].data)
+
+            assert thumb.start == lookup_rsp.lookup
+
+            L.info("Completed lookup for hash=%d:", lookup_rsp.lookup)
+            L.info("    The first hop was: %d", lookup_rsp.node)
+            L.info("    The hash of the neighbor is: %d", lookup_rsp.mapped)
+            L.info("    The nearest neighbor is listening on: %s:%d", *lookup_rsp.listener)
+
+        else:
+            # L.info("    Local entry found!")
+            # L.info("    Current successor: %d", thumb.node.hash)
+            # L.info("    Best successor: %d", predecessor.successor.hash)
+            thumb.node = predecessor.successor
 
     def process(self, peer_socket, msg):
         if peer_socket is None:     # socket closed?
@@ -291,6 +319,7 @@ class LocalNode(chordnode.ChordNode):
             packetlib.MessageType.MSG_CH_JOIN:      self.on_join_request,
             packetlib.MessageType.MSG_CH_INFO:      self.on_info_request,
             packetlib.MessageType.MSG_CH_NOTIFY:    self.on_notify_request,
+            packetlib.MessageType.MSG_CH_LOOKUP:    self.on_lookup_request,
         }
 
         for msg_type, func in handlers.iteritems():
@@ -298,7 +327,8 @@ class LocalNode(chordnode.ChordNode):
                 func(peer_socket, msg)
                 break
         else:
-            raise ValueError("Invalid message received! No handler.")
+            raise ValueError("Message received (type=%s) without handler." % (
+                message.MessageType.LOOKUP[msg.type]))
 
 
     @prevent_nonpeers
@@ -349,6 +379,10 @@ class LocalNode(chordnode.ChordNode):
         L.info("Received info from a peer: %d", info_resp.sender_hash)
         L.info("    Successor hash: %d", info_resp.succ_hash)
         L.info("    Successor listening on: %s:%d", *info_resp.listener)
+
+        assert node.hash == info_resp.sender_hash, "Hashes don't match!"
+
+        # node.
 
         return info_resp
 
@@ -479,7 +513,68 @@ class LocalNode(chordnode.ChordNode):
         return True
 
     def on_notify_response(self, sock, msg):
-        notif_msg = chord.NotifyResponse.unpack(msg.data)
+        notif_msg = chordpkt.NotifyResponse.unpack(msg.data)
+
+    def on_lookup_request(self, sock, msg):
+        """ TODO: Make this work asynchronously (ex: `self.pending_lookups`).
+            TODO: Unify this with `self.fix_fingers`.
+        """
+        lookup_rq = chordpkt.LookupRequest.unpack(msg.data)
+        L.info("Received a lookup request from %d for %d",
+               lookup_rq.sender, lookup_rq.lookup)
+
+        h = lookup_rq.lookup
+        # import pdb; pdb.set_trace()
+        pred = self.fingers.find_predecessor(h)
+
+         # Perform iterative lookup for nodes that we need more information on.
+        if isinstance(pred, remotenode.RemoteNode) and \
+           pred.successor is None:
+
+            L.info("    Failed to look up locally!")
+            L.info("    The nearest local neighbor is: %d", pred.hash)
+            L.info("    Performing a remote lookup!")
+
+            lookup_msg = chordpkt.LookupRequest.make_packet(self.hash,
+                fingertable.Hash(hashed=h))
+
+            response_data = []
+            def callback(*args):
+                global response_data
+                response_data = args
+                return True
+
+            result = self.processor.request(pred.peer_sock,
+                lookup_msg, callback, wait_time=120)
+
+            if not result:
+                L.warning("Finding the successor of %s failed.", h)
+                import pdb; pdb.set_trace()
+                return
+
+            lookup_rsp = chordpkt.LookupResponse.unpack(response_data[1])
+            assert h == lookup_rsp.lookup
+
+            lookup_rsp  = chordpkt.LookupResponse.make_packet(self.hash,
+                lookup_rsp.lookup, lookup_rsp.mapped, lookup_rsp.listener,
+                hops=lookup_rsp.hops + 1)
+
+            L.info("Completed lookup for hash=%d:", lookup_rsp.lookup)
+            L.info("    Hop 1/%d was: %d", lookup_rsp.hops, lookup_rsp.node)
+            L.info("    The hash of the neighbor is: %d", lookup_rsp.mapped)
+            L.info("    The nearest neighbor is listening on: %s:%d",
+                   *lookup_rsp.listener)
+
+        else:
+            L.info("    Local entry found!")
+            L.info("    Current successor: %d", h)
+            L.info("    Best successor: %d", pred.successor.hash)
+
+            lookup_rsp = chordpkt.LookupResponse.make_packet(self.hash, h,
+                pred.successor.hash, pred.successor.local_addr, original=msg)
+
+        self.processor.response(sock, lookup_rsp)
+
 
     def _peerlist_contains(self, elem):
         if isinstance(elem, tuple):

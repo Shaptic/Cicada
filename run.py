@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 import sys
 import time
+import argparse
 
 import chordlib.localnode
 import chordlib.utils as chutils
@@ -44,12 +45,37 @@ def main(host_address, join_address=None):
     return (root, )
 
 if __name__ == "__main__":
-    client = None
-    ip, port = sys.argv[1], sys.argv[2]
-    if len(sys.argv) > 3:
-        client = (sys.argv[3], int(sys.argv[4]))
+    parser = argparse.ArgumentParser(
+        description="Interact with a Chord ring.",
+        epilog="Addresses are expected to be colon-separated pairs of an "
+               "IP address (or a hostname) and a port number. For example: "
+               "localhost:1234 or 10.0.0.1:5678.")
 
-    ring = main((ip, int(port)), client)
+    parser.add_argument("listener", metavar="address",
+        help="the address to listen on for incoming Chord peers")
+    parser.add_argument("--join", dest="join_address", metavar="address",
+        help="the address of an existing Chord ring to join")
+
+    args = parser.parse_args()
+    print args
+
+    if args.listener.find(':') == -1:
+        print "Invalid address! Expected 'ip:port' passed in (see --help)."
+        sys.exit(0)
+
+    server = args.listener.split(':')
+    server = (server[0], int(server[1]))
+
+    client = None
+    if args.join_address:
+        if args.join_address.find(':') == -1:
+            print "Invalid address! Expected 'ip:port' passed in (see --help)."
+            sys.exit(0)
+
+        client = args.join_address.split(':')
+        client = (client[0], int(client[1]))
+
+    ring = main(server, join_address=client)
     time.sleep(60)
 
     print "Shutting down background stabilizer threads."

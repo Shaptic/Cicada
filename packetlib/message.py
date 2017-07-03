@@ -31,7 +31,9 @@ class MessageType:
     MSG_CH_INFOR    = MSG_CH_INFO    + 1
     MSG_CH_NOTIFY   = MSG_CH_INFOR   + 1
     MSG_CH_NOTIFYR  = MSG_CH_NOTIFY  + 1
-    MSG_CH_PING     = MSG_CH_NOTIFYR + 1
+    MSG_CH_LOOKUP   = MSG_CH_NOTIFYR + 1
+    MSG_CH_LOOKUPR  = MSG_CH_LOOKUP  + 1
+    MSG_CH_PING     = MSG_CH_LOOKUPR + 1
     MSG_CH_PONG     = MSG_CH_PING    + 1
     MSG_CH_QUIT     = MSG_CH_PONG    + 1
     MSG_CH_ACK      = MSG_CH_QUIT    + 1
@@ -46,6 +48,8 @@ class MessageType:
         MSG_CH_JOINR:   "JOIN-RESP",
         MSG_CH_NOTIFY:  "NOTIFY",
         MSG_CH_NOTIFYR: "NOTIFY-RESP",
+        MSG_CH_LOOKUP:  "LOOKUP",
+        MSG_CH_LOOKUPR: "LOOKUP-RESP",
         MSG_CH_INFO:    "INFO",
         MSG_CH_INFOR:   "INFO-RESP",
         MSG_CH_ERROR:   "ERROR",

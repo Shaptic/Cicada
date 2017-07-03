@@ -181,7 +181,7 @@ class JoinResponse(message.BaseMessage):
         entry_bytes = ''.join([
             struct.pack('!' + ''.join(self.ENTRY_FORMAT),
                 entry.start, entry.end,
-                PackedAddress(entry.addr).pack(),
+                PackedAddress(*entry.addr).pack(),
                 PackedHash(entry.hash).pack()
             ) for entry in self.fingers
         ])
@@ -220,7 +220,7 @@ class JoinResponse(message.BaseMessage):
     def __str__(self):
         return "<%s | Node (%s:%d),hash=%s,fingers=%d>" % (
             self.msg_type_str, self.listener[0], self.listener[1],
-            self.node_hash[:8], len(self.fingers))
+            str(self.sender_hash)[:8], len(self.fingers))
 
 
 class InfoRequest(message.BaseMessage):
@@ -249,17 +249,13 @@ class NotifyRequest(message.BaseMessage):
 
 class NotifyResponse(message.BaseMessage):
     RAW_FORMAT = [
-        "H",    # hash length, in bytes (32 for SHA256)
-        "%ds" % (fingertable.BITCOUNT / 8),
-                # SHA256 hash
-        "%ds" % (fingertable.BITCOUNT / 8),
-                # predecessor SHA256 hash
-        "I",    # predecessor listener ip
-        "H",    # predecessor listener port
-        "%ds" % (fingertable.BITCOUNT / 8),
-                # successor SHA256 hash
-        "I",    # successor listener ip
-        "H",    # successor listener port
+        PackedHash.EMBED_FORMAT,        # sender hash
+
+        PackedHash.EMBED_FORMAT,        # predecessor hash
+        PackedAddress.EMBED_FORMAT,     # ^ address
+
+        PackedHash.EMBED_FORMAT,        # successor hash
+        PackedAddress.EMBED_FORMAT,     # ^ address
     ]
     TYPE = message.MessageType.MSG_CH_NOTIFYR
 
@@ -272,176 +268,109 @@ class NotifyResponse(message.BaseMessage):
         """
         super(NotifyResponse, self).__init__(self.TYPE)
 
-        if any([isinstance(x, str) for x in (node_hash, succ.hash, pred.hash)]):
-            raise TypeError("Please provide an integer for a hash.")
+        if any([not isinstance(x, fingertable.Hash) for x in (
+            node_hash, succ.hash, pred.hash)
+        ]):
+            raise TypeError("Please provide a Hash object.")
 
-        self.node_hash = fingertable.unpack_string(node_hash)
-        self.succ_hash = fingertable.unpack_string(succ.hash)
-        self.pred_hash = fingertable.unpack_string(pred.hash)
-
-        assert len(self.node_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
-        assert len(self.pred_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
-        assert len(self.succ_hash) == (fingertable.BITCOUNT / 8), "Invalid hash size."
-
+        self.node_hash = node_hash
+        self.succ_hash = succ.hash
+        self.pred_hash = pred.hash
         self.succ_addr = succ.local_addr
         self.pred_addr = pred.local_addr
 
     def pack(self):
-        hash_bytes = fingertable.BITCOUNT / 8
+        return struct.pack('!' + self.FORMAT,
+            PackedHash(self.node_hash).pack(),
 
-        pkt = struct.pack('!' + self.FORMAT,
-            hash_bytes, self.node_hash,
-            self.succ_hash,
-            pktutils.ip_to_int(self.succ_addr[0]), self.succ_addr[1],
-            self.pred_hash,
-            pktutils.ip_to_int(self.pred_addr[0]), self.pred_addr[1])
+            PackedHash(self.pred_hash).pack(),
+            PackedAddress(*self.pred_addr).pack(),
 
-        return pkt
+            PackedHash(self.succ_hash).pack(),
+            PackedAddress(*self.succ_addr).pack())
 
     @classmethod
     def unpack(cls, bytestream):
-        offset = 0
-        get = lambda idx: message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[idx], bytestream, offset)
-
-        hash_len, offset  = get(0)
-        node_hash, offset = get(1)
-        pred_hs, offset   = get(2)
-        pred_ip, offset   = get(3)
-        pred_pt, offset   = get(4)
-        succ_hs, offset   = get(5)
-        succ_ip, offset   = get(6)
-        succ_pt, offset   = get(7)
-
-        paddr = (pktutils.int_to_ip(pred_ip), pred_pt)
-        saddr = (pktutils.int_to_ip(succ_ip), succ_pt)
+        node_hash, bytestream = PackedHash(bytestream)
+        pred_hash, bytestream = PackedHash(bytestream)
+        pred_addr, bytestream = PackedAddress(bytestream)
+        succ_hash, bytestream = PackedHash(bytestream)
+        succ_addr, bytestream = PackedAddress(bytestream)
 
         FakeSocket = 0xFA#KE
-        pn = remotenode.RemoteNode(fingertable.pack_string(pred_hs),
-                                   paddr, paddr, FakeSocket)
-        sn = remotenode.RemoteNode(fingertable.pack_string(succ_hs),
-                                   saddr, saddr, FakeSocket)
+        pn = remotenode.RemoteNode(pred_hash, pred_addr, pred_addr, FakeSocket)
+        sn = remotenode.RemoteNode(succ_hash, succ_addr, succ_addr, FakeSocket)
 
         return cls(node_hash, pn, sn)
 
 
-if __name__ == "__main__":
-    j = JoinRequest(("127.0.0.1", 5000))
-    print j, repr(j.pack())
-    k = JoinRequest.unpack(j.pack())
-    print k, repr(k.pack())
-    x = JoinResponse("a" * (fingertable.BITCOUNT / 8), ("10.0.0.1", 6000))
-    print x, repr(x.pack())
-    y = JoinResponse.unpack(x.pack())
-    print y, repr(y.pack())
+class LookupRequest(message.BaseMessage):
+    RAW_FORMAT = [
+        PackedHash.EMBED_FORMAT,    # sender hash
+        PackedHash.EMBED_FORMAT,    # hash to look up
+    ]
+    TYPE = message.MessageType.MSG_CH_LOOKUP
 
-    assert j.pack() == k.pack(),  "JoinRequest doesn't [en|de]code right!"
-    assert x.pack() == y.pack(), "JoinResponse doesn't [en|de]code right!"
+    def __init__(self, sender_hash, lookup_hash):
+        if any([not isinstance(x, fingertable.Hash) for x in (
+            sender_hash, lookup_hash)
+        ]):
+            raise TypeError("Please provide a Hash object.")
 
-# class JoinAckMessage(BaseMessage):
-#     """ Prepares a response to a JOIN packet.
+        self.sender = sender_hash
+        self.lookup = lookup_hash
 
-#     This includes all relevant channel metadata associated with the ID:
-#         - readable channel name
-#         - current number of users, N
-#         - random selection of log_2(N) neighbors
+    def pack(self):
+        return struct.pack('!' + self.FORMAT,
+            PackedHash(self.sender).pack(),
+            PackedHash(self.lookup).pack())
 
-#     The user is the responsible for talking to these neighbors.
-#     """
-#     RAW_FORMAT = [
-#         "%ds" % channel.CHANNEL_ID_LENGTH,
-#                                     # unique channel ID
-#         "H",                        # 2-byte name length, LEN
-#         "%ds",                      # LEN-byte readable channel name
-#         "I",                        # 4-byte user count
-#         "H",                        # 2-byte neighbor count
-#     ]
+    @classmethod
+    def unpack(cls, bs):
+        sender, bs = PackedHash.unpack(bs)
+        lookup, bs = PackedHash.unpack(bs)
 
-#     def __init__(self, channel_id, channel_name, user_count, neighbor_count):
-#         if not isinstance(channel_id, channel.ChannelID):
-#             raise TypeError("Channel ID is not an object.")
+        assert bs == "", "Remaining bytes?? %s" % bs
+        return LookupRequest(sender, lookup)
 
-#         self.pkt = CicadaMessage(MessageType.MSG_JOIN_ACK)
-#         self.pkt.data = struct.pack(
-#             "!%s" % (self.FORMAT % len(channel_name)),
-#             str(channel_id), len(channel_name), channel_name,
-#             user_count, neighbor_count)
 
-#         self.channel_id = channel_id
-#         self.name = channel_name
-#         self.users = user_count
-#         self.neighbors = neighbor_count
+class LookupResponse(message.BaseMessage):
+    RAW_FORMAT = [
+        PackedHash.EMBED_FORMAT,    # sender hash
+        PackedHash.EMBED_FORMAT,    # lookup hash
+        PackedHash.EMBED_FORMAT,    # resulting mapped node hash
+        PackedAddress.EMBED_FORMAT, # resulting mapped node listener
+        "H",    # number of hops it took
+    ]
+    TYPE = message.MessageType.MSG_CH_LOOKUPR
 
-#     @classmethod
-#     def unpack(cls, packet):
-#         obj, pre, post = CicadaMessage.unpack(packet)
+    def __init__(self, sender_hash, lookup_hash, mapped_hash, mapped_address,
+                 hops=1):
+        if any([not isinstance(x, fingertable.Hash) for x in (
+            sender_hash, lookup_hash, mapped_hash)
+        ]):
+            raise TypeError("Please provide a Hash object.")
 
-#         offset = 0
-#         getBlob = lambda i: CicadaMessage.extract_chunk(
-#             cls.RAW_FORMAT[i], obj.data, offset)
+        self.node = sender_hash
+        self.lookup = lookup_hash
+        self.mapped = mapped_hash
+        self.listener = mapped_address
+        self.hops = hops
 
-#         chan_id, offset  = getBlob(0)
-#         name_len, offset = getBlob(1)
-#         name, offset     = CicadaMessage.extract_chunk(
-#             cls.RAW_FORMAT[2] % name_len, obj.data, offset)
-#         ucount, offset   = getBlob(3)
-#         ncount, offset   = getBlob(4)
+    def pack(self):
+        return struct.pack('!' + self.FORMAT,
+            PackedHash(self.node).pack(),
+            PackedHash(self.lookup).pack(),
+            PackedHash(self.mapped).pack(),
+            PackedAddress(*self.listener).pack(),
+            self.hops)
 
-#         obj = JoinAckMessage(channel.ChannelID(chan_id), name, ucount, ncount)
-#         return obj, pre, post
+    @classmethod
+    def unpack(self, bs):
+        node,    bs = PackedHash.unpack(bs)
+        lookup,  bs = PackedHash.unpack(bs)
+        mapped,  bs = PackedHash.unpack(bs)
+        address, bs = PackedAddress.unpack(bs)
+        hops = message.MessageContainer.extract_chunk(self.RAW_FORMAT[-1], bs, 0)
 
-#     def __str__(self):
-#         return "<%s \"%s\" | id=%s;u=%d/%d>" % (
-#             MessageType.LOOKUP[self.pkt.type],
-#             self.name, self.channel_id, self.users, self.neighbors)
-
-# class FailMessage(BaseMessage):
-#     """ Represents a generic failure message, containing details within it.
-
-#     This saves the effort of having a unique failure format for each message
-#     type. Instead, the failure message contains within it these details:
-#         - Checksum of the message that triggered the failure.
-#         - The severity of the failure (1=warning, 2=error, 3=fatal)
-#         - An error message describing the failure.
-
-#     On a fatal error, the connection will be closed.
-#     """
-#     RAW_FORMAT = [
-#         "16s",  # 16-byte checksum of the message that caused the error
-#         "b",    # 1-byte  severity
-#         "I",    # 4-byte  length of the error message
-#         "%ds",  # The error message
-#     ]
-
-#     def __init__(self, error_type, error_msg, cause, severity=2):
-#         if not isinstance(cause.pkt, CicadaMessage) or \
-#            not hasattr(cause.pkt, "checksum"):
-#             raise TypeError("Cause must contain a valid packet.")
-
-#         self.checksum = cause.pkt.checksum
-#         self.error_msg = error_msg
-#         self.severity = severity
-
-#         self.pkt = CicadaMessage(error_type)
-#         self.pkt.data = struct.pack('!' + self.FORMAT,
-#             self.cause, self.severity,
-#             len(self.error_msg), self.error_msg)
-
-#     @classmethod
-#     def unpack(cls, pkt):
-#         obj, pre, post = CicadaMessage.unpack(pkt)
-
-#         offset = 0
-#         getBlob = lambda i: CicadaMessage.extract_chunk(
-#             obj.data, cls.RAW_FORMAT[i], offset)
-
-#         chk, offset = getBlob(0)
-#         sev, offset = getBlob(1)
-#         leg, offset = getBlob(2)
-#         err, offset = CicadaMessage.extract_chunk(
-#             obj.data, cls.RAW_FORMAT[3] % leg, offset)
-
-#         return FailMessage(obj.type, err, chk, sev)
-
-#     def __str__(self):
-#         return "<FAIL | msg=%s>" % (self.error_msg)
+        return LookupResponse(node, lookup, mapped, address)

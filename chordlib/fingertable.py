@@ -98,11 +98,26 @@ class Hash(object):
     def value(self):
         return self._value
 
+    def __eq__(self, other):
+        if isinstance(other, int):
+            return int(self) == other
+        elif isinstance(other, str):
+            return str(self) == other
+        elif isinstance(other, Hash):
+            return int(self) == int(other)
+        raise TypeError("Hash.__eq__ called with invalid parameter.")
+
+    def __ne__(self, other):
+        return not (self == other)
+
     def __str__(self):
         return self._hash_str
 
     def __int__(self):
         return self._hash_int
+
+    def __repr__(self):
+        return str(int(self))
 
 
 def khash(k):
@@ -282,11 +297,13 @@ class FingerTable(object):
             self.entries[index].node = repl
 
     def find_successor(self, value):
-        """ Finds the successor node for a particular value. """
+        """ Finds the successor node for a particular value.
+        """
         return self.find_predecessor(value).successor
 
     def find_predecessor(self, value):
-        """ Finds the predecessor for a particular value. """
+        """ Finds the predecessor node for a particular value.
+        """
         start = self.root
         if start.successor is None:     # no fingers yet
             return start
@@ -294,8 +311,16 @@ class FingerTable(object):
         tmp_entry = Interval(int(start.hash), int(start.successor.hash),
                              self.modulus)
 
+        value = int(value)  # ensure we don't deal with `Hash`
         while not tmp_entry.within_closed(value):
             start = start.fingers.lookup_preceding(value)
+
+            # If this evaluates to `None`, this is most likely a `RemoteNode`,
+            # so we don't have any routing information for it. Thus, we need to
+            # ask the node to continue the lookup for us (from a higher level).
+            if start.fingers.finger(0).node is None:
+                return start
+
             tmp_entry = Interval(int(start.hash), int(start.successor.hash),
                                  self.modulus)
 
