@@ -10,6 +10,7 @@ ring.
 This is a list for development, as opposed to the README list which is more of a
 "big picture" list for full modules and concepts.
 
+- [ ] Add multiple nodes as backup entries to the finger table.
 - [ ] Allow sending `None` for predecessor or successor fields in the messages.
 - [ ] Consolidate all of the code that uses the JOIN-RESP message format to
       process internal state.
@@ -391,10 +392,10 @@ class LocalNode(chordnode.ChordNode):
         info_resp = chordpkt.InfoResponse.unpack(msg.data)
 
         L.info("Received info from a peer: %d", info_resp.sender)
-        L.info("    Successor hash: %d", info_resp.succ_hash)
-        L.info("    Successor listening on: %s:%d", *info_resp.succ_addr)
-        L.info("    Predecessor hash: %d", info_resp.pred_hash)
-        L.info("    Predecessor address: %s:%d", *info_resp.pred_addr)
+        L.info("    Successor hash: %d on %s:%d", info_resp.succ_hash,
+               *info_resp.succ_addr)
+        L.info("    Predecessor hash: %d on %s:%d", info_resp.pred_hash,
+               *info_resp.pred_addr)
 
         assert node.hash == info_resp.sender, "Hashes don't match!"
 
@@ -452,15 +453,12 @@ class LocalNode(chordnode.ChordNode):
 
         L.info("Allowing connection and responding with our details:")
         L.info("    Our hash: %d", self.hash)
-        L.info("    Our successor hash: %d", self.successor.hash)
-        L.info("    Our successor listener: %s:%d",
-            *self.successor.local_addr)
-        L.info("    Our predecessor hash: %d", self.predecessor.hash)
-        L.info("    Our predecessor listener: %s:%d",
-            *self.predecessor.local_addr)
-        L.info("    Requestee successor hash: %d", response_object.hash)
-        L.info("    Requestee successor listener: %s:%d",
-            *response_object.local_addr)
+        L.info("    Our successor hash: %d on %s:%d", self.successor.hash,
+               *self.successor.local_addr)
+        L.info("    Our predecessor hash: %d on %s:%d", self.predecessor.hash,
+               *self.predecessor.local_addr)
+        L.info("    Requestee successor hash: %d on %s:%d",
+               response_object.hash, *response_object.local_addr)
 
         response = chordpkt.JoinResponse.make_packet(response_object,
             self.hash, self.predecessor, self.successor, original=msg)
@@ -481,12 +479,12 @@ class LocalNode(chordnode.ChordNode):
 
         L.info("We have been permitted to join the network:")
         L.info("    From peer with hash: %d", joinr_msg.sender)
-        L.info("    Sender successor hash: %d",        joinr_msg.succ_hash)
-        L.info("    Sender successor address: %s:%d", *joinr_msg.succ_addr)
-        L.info("    Sender predecessor hash: %d",        joinr_msg.pred_hash)
-        L.info("    Sender predecessor address: %s:%d", *joinr_msg.pred_addr)
-        L.info("    Our new predecessor hash: %d",        joinr_msg.req_succ_hash)
-        L.info("    Our new predecessor address: %s:%d", *joinr_msg.req_succ_addr)
+        L.info("    Sender successor hash: %d on %s:%d",
+               joinr_msg.succ_hash, *joinr_msg.succ_addr)
+        L.info("    Sender predecessor hash: %d on %s:%d",
+               joinr_msg.pred_hash, *joinr_msg.pred_addr)
+        L.info("    Our new predecessor hash: %d on %s:%d",
+               joinr_msg.req_succ_hash, *joinr_msg.req_succ_addr)
 
         result = self._peerlist_contains(joinr_msg.req_succ_addr)
         if result is not None:
@@ -525,9 +523,8 @@ class LocalNode(chordnode.ChordNode):
             L.info("    Node hash: %d", node.hash)
 
             if node.predecessor is not None:
-                L.info("    Node predecessor hash: %d", node.predecessor.hash)
-                L.info("    Node predecessor address: %s:%d",
-                    *node.predecessor.local_addr)
+                L.info("    Node predecessor hash: %d on %s:%d",
+                       node.predecessor.hash, *node.predecessor.local_addr)
             else:
                 L.warning("    Node has no predecessor!")
 
@@ -548,10 +545,10 @@ class LocalNode(chordnode.ChordNode):
         notif_msg = chordpkt.NotifyResponse.unpack(msg.data)
 
         L.info("Received a notification from a peer: %d", notif_msg.sender)
-        L.info("    Successor hash: %d", notif_msg.succ_hash)
-        L.info("    Successor listening on: %s:%d", *notif_msg.listener)
-        L.info("    Predecessor hash: %d", notif_msg.pred_hash)
-        L.info("    Predecessor address: %s:%d", *notif_msg.pred_addr)
+        L.info("    Successor hash: %d on %s:%d",
+               notif_msg.succ_hash, *notif_msg.listener)
+        L.info("    Predecessor hash: %d on %s:%d",
+               notif_msg.pred_hash, *notif_msg.pred_addr)
 
         assert node.hash == notif_msg.node_hash, "Hashes don't match!"
 
@@ -607,9 +604,8 @@ class LocalNode(chordnode.ChordNode):
 
             L.info("Completed lookup for hash=%d:", lookup_rsp.lookup)
             L.info("    Hop 1/%d was: %d", lookup_rsp.hops, lookup_rsp.node)
-            L.info("    The hash of the neighbor is: %d", lookup_rsp.mapped)
-            L.info("    The nearest neighbor is listening on: %s:%d",
-                   *lookup_rsp.listener)
+            L.info("    The hash of the nearest neighbor is: %d on %s:%d",
+                   lookup_rsp.mapped, *lookup_rsp.listener)
 
         else:
             L.info("    Local entry found!")
