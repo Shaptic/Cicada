@@ -155,10 +155,11 @@ class ListenerThread(InfiniteThread):
         :on_accept  A callable handler that is called when clients connect.
                         on_accept(client_address, client_socket)
         """
-        super(ListenerThread, self).__init__(name="ListenerThread")
+        super(ListenerThread, self).__init__(name="ListenerThread",
+            pause_length=0.2)
+
         self._on_accept = on_accept
         self.listener = sock
-        self.sleep = 0.2    # prevents 100% CPU usage while listening
 
     def _loop_method(self):
         rd, wr, er = select.select([ self.listener ], [], [ self.listener ],
@@ -240,7 +241,7 @@ class SocketProcessor(InfiniteThread):
             Where `graceful` indicates whether it was a cleanly-closed socket
             (that is, no data was received) or if it was an exception thrown.
         """
-        super(SocketProcessor, self).__init__()
+        super(SocketProcessor, self).__init__(pause_length=0.2)
 
         # dict -> { socket: MessageStream }
         self.sockets = { }

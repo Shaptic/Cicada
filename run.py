@@ -2,10 +2,11 @@
 import sys
 import time
 import argparse
+import logging
 
+import chordlib
 import chordlib.localnode
 import chordlib.utils as chutils
-from   chordlib import L
 
 def main(host_address, join_address=None):
     """ Executes a normal Chord workflow.
@@ -29,7 +30,7 @@ def main(host_address, join_address=None):
     socket, and vice-versa.
     """
 
-    L.info("main(%s, %s)" % (host_address, join_address))
+    chordlib.log.info("main(%s, %s)" % (host_address, join_address))
     root = chordlib.localnode.LocalNode("%s:%d" % host_address, host_address)
 
     if join_address is not None:
@@ -55,10 +56,12 @@ if __name__ == "__main__":
         help="the address to listen on for incoming Chord peers")
     parser.add_argument("--join", dest="join_address", metavar="address",
         help="the address of an existing Chord ring to join")
+    parser.add_argument("--stdout", dest="screenlog", action="store_true",
+        help="write all logging output to stdout in addition to the logfile")
+    parser.add_argument("--debug", dest="debuglog", action="store_true",
+        help="include DEBUG-level output in logging")
 
     args = parser.parse_args()
-    print args
-
     if args.listener.find(':') == -1:
         print "Invalid address! Expected 'ip:port' passed in (see --help)."
         sys.exit(0)
@@ -75,6 +78,14 @@ if __name__ == "__main__":
         client = args.join_address.split(':')
         client = (client[0], int(client[1]))
 
+    if args.screenlog:
+        h = logging.StreamHandler(sys.stdout)
+        h.setFormatter(chordlib.ChordFormatter())
+        chordlib.log.addHandler(h)
+
+    if args.debuglog:
+        chordlib.log.setLevel(logging.DEBUG)
+
     ring = main(server, join_address=client)
     time.sleep(60)
 
@@ -89,5 +100,3 @@ if __name__ == "__main__":
         node.dispatcher.join(5)
         node.listen_thread.join(5)
         print "Shut down %d/%d...\r" % (i + 1, len(ring)),
-
-    # print

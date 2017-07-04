@@ -43,7 +43,7 @@ class ChordFormatter(logging.Formatter):
         ct = self.converter(record.created)
         return ct.strftime(datefmt)
 
-h = logging.StreamHandler(sys.stdout)
+h = logging.FileHandler("cicada.log", mode="w")
 h.setFormatter(ChordFormatter())
 
 L = log = logging.getLogger(__name__)

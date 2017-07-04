@@ -19,7 +19,7 @@ class Stabilizer(commlib.InfiniteThread):
         self.node = node
 
     def _loop_method(self):
-        time.sleep(random.randint(3, 10))
+        self.sleep = random.randint(3, 10)
         self.node.stabilize()
         self.node.fix_fingers()
 
