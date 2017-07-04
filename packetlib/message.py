@@ -430,7 +430,6 @@ class BaseMessage(object):
         self.type = msg_type
 
     def pack(self): return ""
-    def __repr__(self): return str(self)
 
     @classmethod
     def unpack(cls, pkt):

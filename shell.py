@@ -4,6 +4,12 @@
 import socket
 import inspect
 
+# readline is a better interactive prompt
+try:
+    import readline
+except ImportError:
+    pass
+
 import chordlib
 import chordlib.localnode
 
@@ -15,14 +21,17 @@ hostname and a port. For example, localhost:1234.
 create [address]
     Creates a Chord node listening on a particular address.
 
-join [node] [address]
+join [node] [address|node]
     On the provided [node], joins an existing Chord ring on the given address.
-
-list, show
-    Shows identifiers and a quick summary for all existing nodes.
 
 lookup [address]
     Performs a full route lookup on an address.
+
+stop [node]
+    Disconnects a node from a Chord ring and removes it.
+
+list, show
+    Shows identifiers and a quick summary for all existing nodes.
 
 help, ?
     Shows this help text.
@@ -105,8 +114,14 @@ def on_stop(node):
     del root
 
 def on_join(node, address):
-    address = validate_address(address, fname="join")
-    if not address: return
+    addr = validate_address(address, fname="join")
+    if not addr:
+        print "Trying as a node ID."
+        other_node, _ = validate_node(address)
+        if not other_node: return
+        address = other_node.local_addr
+    else:
+        address = addr
 
     root, node = validate_node(node)
     if not root: return
@@ -114,13 +129,20 @@ def on_join(node, address):
     print "Joining Chord node on %s:%d" % address
     try:
         root.join_ring(address)
-    except socket.error:
+    except socket.error, e:
         print "Error when running command: join"
+        print str(e)
         print "Failed to join ring on address %s:%d" % address
         print "Are you sure there is a Chord ring at this address?"
         return
 
-def on_lookup(address):
+def on_lookup(node, address):
+    address = validate_address(address, fname="join")
+    if not address: return
+
+    root, node = validate_node(node)
+    if not root: return
+
     return True
 
 def parse(cmd, *args):
@@ -160,6 +182,7 @@ COMMANDS = {
     "list": on_list,
     "show": on_list,
     "join": on_join,
+    "stop": on_stop,
     "create": on_create,
     "lookup": on_lookup,
 }
