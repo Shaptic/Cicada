@@ -4,31 +4,6 @@ This is the object you want to use to begin structuring a Chord ring on your
 machine. At this point, you can either join an existing ring (by using the
 `LocalNode.join_ring` method), or simply by waiting for a node to join this
 ring.
-
- TODO LIST
-===========
-This is a list for development, as opposed to the README list which is more of a
-"big picture" list for full modules and concepts.
-
-- [ ] Add multiple nodes as backup entries to the finger table.
-- [ ] Allow sending `None` for predecessor or successor fields in the messages.
-- [ ] Consolidate all of the code that uses the JOIN-RESP message format to
-      process internal state.
-- [ ] Consolidate the remote lookup code from `fix_fingers` and
-      `on_lookup_request` into a single location.
-- [*] Why does this cause a crash?
-            thumb.node = self.fingers.find_successor(thumb.start)
-      Only sometimes, with two nodes -- seems consistent with 3+ nodes.
-- [*] Figure out why the NOTIFY message sends every time -- in theory, we should
-      only need to send it when we know that the node doesn't know about us.
-- [ ] In `on_info_response`, actually parse and process the message and fill the
-      local node reference with the updated information.
-- [*] Optimize hashing to not pack/unpack unecessarily. I probably need to add
-      some sort of `Hash` object -- this way, I can preserve the previous info
-      in addition to the hash itself.
-- [*] Add more verbose / informative `level=INFO` logging.
-- [ ] Add custom exceptions for the Chord protocol aspects itself, rather than
-      just various `UnpackException`s.
 """
 
 import threading
@@ -306,7 +281,8 @@ class LocalNode(chordnode.ChordNode):
             L.info("Completed lookup for hash=%d:", lookup_rsp.lookup)
             L.info("    The first hop was: %d", lookup_rsp.sender)
             L.info("    The hash of the neighbor is: %d", lookup_rsp.mapped)
-            L.info("    The nearest neighbor is listening on: %s:%d", *lookup_rsp.listener)
+            L.info("    The nearest neighbor is listening on: %s:%d",
+                   *lookup_rsp.listener)
 
         else:
             # L.info("    Local entry found!")
@@ -400,6 +376,7 @@ class LocalNode(chordnode.ChordNode):
         assert node.hash == info_resp.sender, "Hashes don't match!"
 
         if node.successor is not None:
+            L.info("Removing old successor from node %d!", node.successor.hash)
             node.fingers.remove(node.successor)
         node.fingers.insert(info_resp.successor)
         node.predecessor = info_resp.predecessor
