@@ -175,9 +175,27 @@ class Interval(object):
 class Finger(Interval):
     """ Represents a single entry in a finger table.
     """
+    BACKUP_LENGTH = 5   # store a history of nodes as fallbacks
+
     def __init__(self, start, end, node=None, mod=HASHMOD):
         super(Finger, self).__init__(start, end, mod)
-        self.node = node    # node to contact regarding keys in the interval
+        self.nodes = []
+        if not node:
+            self.nodes.append(node)
+
+    @property
+    def node(self):
+        return self.nodes[-1] if self.nodes else None
+
+    @node.setter
+    def node(self, value):
+        assert value, "Can't add non-nodes! %s" % value
+        if len(self.nodes) > Finger.BACKUP_LENGTH:
+            self.nodes.pop(0)
+        self.nodes.append(value)
+
+    def remove(self):
+        self.nodes.pop(-1)
 
     def __repr__(self): return str(self)
     def __str__(self):
@@ -285,7 +303,7 @@ class FingerTable(object):
             if f.node is node:
                 L.debug("\t%s", f)
                 removed[i] = f
-                f.node = None
+                f.remove()
 
         L.debug("Node finger table is now:")
         for i in xrange(0, len(self) - 1, 2):
