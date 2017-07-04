@@ -158,6 +158,7 @@ class ListenerThread(InfiniteThread):
         super(ListenerThread, self).__init__(name="ListenerThread")
         self._on_accept = on_accept
         self.listener = sock
+        self.sleep = 0.2    # prevents 100% CPU usage while listening
 
     def _loop_method(self):
         rd, wr, er = select.select([ self.listener ], [], [ self.listener ],

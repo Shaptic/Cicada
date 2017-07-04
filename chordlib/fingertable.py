@@ -312,7 +312,8 @@ class FingerTable(object):
         # TODO: Optimize this, because they should all be the same?
         for index, entry in removed.iteritems():
             repl = self.find_successor(entry.start)
-            self.entries[index].node = repl
+            if repl:
+                self.entries[index].node = repl
 
     def find_successor(self, value):
         """ Finds the successor node for a particular value.
