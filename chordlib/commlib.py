@@ -63,24 +63,30 @@ class ReadQueue(object):
     def __init__(self):
         self.queue = []
         self.pending = ""
+        self.queue_lock = threading.Lock()
 
     def read(self, data):
         """ Processes some data into the queue.
         """
-        with threading.Lock() as queue_lock:
+        self.queue_lock.acquire()
+
+        try:
             self.pending += data
             index = self.pending.find(self.BUFFER_END_BYTES)
             if index == -1: return
 
-            try:
-                pkt = message.MessageContainer.unpack(self.pending)
-                self.queue.append(pkt)
-                self.pending = self.pending[index + len(self.BUFFER_END_BYTES):]
+            relevant = self.pending[:index + len(self.BUFFER_END_BYTES)]
+            pkt = message.MessageContainer.unpack(relevant)
+            self.pending = self.pending.replace(relevant, "", 1)
+            self.queue.append(pkt)
 
-            except message.UnpackException, e:
-                L.warning("Failed to parse incoming message: %s", repr(self.pending))
-                message.MessageContainer.debug_packet(self.pending)
-                raise
+        except message.UnpackException, e:
+            L.warning("Failed to parse incoming message: %s", repr(self.pending))
+            message.MessageContainer.debug_packet(self.pending)
+            raise
+
+        finally:
+            self.queue_lock.release()
 
     @property
     def ready(self):
@@ -89,7 +95,10 @@ class ReadQueue(object):
 
     def pop(self):
         """ Removes the oldest packet from the queue. """
-        return self.queue.pop(0)
+        self.queue_lock.acquire()
+        r = self.queue.pop(0)
+        self.queue_lock.release()
+        return r
 
 
 class SignalableThread(threading.Thread):
