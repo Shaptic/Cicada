@@ -22,16 +22,18 @@ You can also use the interactive shell to manage more complex swarms:
 
     $ python2 shell.py
     >>> create localhost:10000
-    id=1
+    Creating Chord node on localhost:10000
+    Identifier: 26490
     >>> create localhost:10001
-    id=2
+    Creating Chord node on localhost:10001
+    Identifier: 16966
     >>> create localhost:10002
-    id=3
-    >>> create localhost:10003
-    id=4
-    >>> join 1 2
-    >>> join 3 1
-    >>> join 4 1
+    Creating Chord node on localhost:10002
+    Identifier: 30572
+    >>> join 169 264
+    Joining Chord node on 127.0.0.1:10000
+    >>> join 305 169
+    Joining Chord node on 127.0.0.1:10001
     >>> show
 
 ### Using Cicada in Your Application ###
@@ -48,11 +50,15 @@ will travel through on the way to its destination. Standard routing through the
 Internet faces these same implications, but we implicitly trust that network
 topology more (we must, in fact, in order to gain any semblance of security).
 
-The only way to _ensure_ secure communications that are immune to Man-in-the-
-Middle attacks and packet sniffing is to establish a trusted set of encryption keys before using the network. This can be via secure email, and encrypted telephone call, exchanging symmetric keys in person, etc. Once these keys are exchanged, `cicada` can use them directly to encrypt all outgoing communication to a particular node.
+The only way to _ensure_ secure communications that are immune to 
+Man-in-the-Middle attacks and packet sniffing is to establish a trusted set of
+encryption keys before using the network. This can be via secure email, and
+encrypted telephone call, exchanging symmetric keys in person, etc. Once these
+keys are exchanged, `cicada` can use them directly to encrypt all outgoing
+communication to a particular node.
 
 If you trust the network (or at least the majority of it -- see the [Attacker
-Resilience](#Attacker-Resilience) section below), you can use standard public-
+Resilience](#attacker-resilience) section below), you can use standard public-
 key authentication methods to establish an SSL communcation stream between
 particular peers. That is to say, the traffic is still routed through the other
 peers, but is encrypted with SSL.
