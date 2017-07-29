@@ -1,7 +1,11 @@
-class BSearchMode(object):
+import enum
+
+
+class BSearchMode(enum.Enum):
     EXACT = 1
     PREDECESSOR = 2
     SUCCESSOR = 3
+
 
 def bsearch(array, target, func=lambda x: x, mode=BSearchMode.EXACT):
     """ Performs binary search on a sorted array.

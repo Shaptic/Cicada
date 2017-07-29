@@ -383,9 +383,9 @@ class MessageContainer(object):
 
     def __repr__(self): return str(self)
     def __str__(self):
-        return "<%s | %d bytes%s>" % (
+        return "<%s(%dB)%s>" % (
             MessageType.LOOKUP[self.type], self.length,
-            "" if   self.quick_type not in (QuickType.RESPONSE,QuickType.ERROR)\
+            "" if self.quick_type not in (QuickType.RESPONSE, QuickType.ERROR) \
                else (" | to=%d" % self.original.seq))
 
 

@@ -39,18 +39,20 @@ from chordlib import fingertable
 class RemoteNode(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
 
-    The primary purpose of this object is to handle communication from a local
-    node to a remote node. It will cache properties within itself, but will
-    perform a remote lookup otherwise. It will also listen to changes from the
-    node to update the properties.
-
-    For example, accessing `Peer.successor` may (instantly) return a current
-    value if it has been fetched or updated recently, but otherwise may require
-    actual network communication to fetch it.
+    TODO: Update this documentation section.
+    +---------------------------------------------------------------------------
+    |   The primary purpose of this object is to handle communication from a
+    |   local node to a remote node. It will cache properties within itself, but
+    |   will perform a remote lookup otherwise. It will also listen to changes
+    |   from the node to update the properties.
+    |
+    |   For example, accessing `Peer.successor` may (instantly) return a current
+    |   value if it has been fetched or updated recently, but otherwise may
+    |   require actual network communication to fetch it.
+    +---------------------------------------------------------------------------
     """
 
-    def __init__(self, node_hash, remote_addr, peer_listener_addr,
-                 existing_socket=None):
+    def __init__(self, node_hash, listener_addr, existing_socket=None):
         """ Establishes a connection to a remote node.
 
         The address is the receiving end of the socket of the `LocalNode`
@@ -58,33 +60,32 @@ class RemoteNode(chordnode.ChordNode):
 
         If `existing_socket` exists, there is no connection initiated.
 
-        :node_hash
-        :remote_addr
-        :peer_listener_addr
-        :existing_socket
+        :node_hash              the hash of the remote node.
+        :listener_addr          the listener address on the remote node.
+        :existing_socket[=None] is there already an established connection?
         """
-        if not isinstance(remote_addr, tuple):
+        if not isinstance(listener_addr, tuple):
             raise TypeError("Must join ring via address pair, got %s!" % (
-                remote_addr))
+                listener_addr))
 
         if existing_socket is not None:
             s = existing_socket
         else:
             s = commlib.ThreadsafeSocket()
-            s.connect(remote_addr)
+            s.connect(listener_addr)
 
         self.peer_sock = s
-        self.remote_addr = remote_addr
         self.complete = False   # set when the socket closes
 
         if node_hash is None:   # not set for peer on first join
-            self._hash = fingertable.Hash(value="notset")
+            h = fingertable.Hash(value="notset")
         else:
-            self._hash = fingertable.Hash(hashed=node_hash)
+            h = fingertable.Hash(hashed=node_hash)
 
-        super(RemoteNode, self).__init__(peer_listener_addr)
+        super(RemoteNode, self).__init__(h, listener_addr)
 
     def __str__(self):
-        return "<RemoteNode | hash=%d,pred=%s,succ=%s>" % (self.hash,
+        return "<RemoteNode(%s:%d) | hash=%d,pred=%s,succ=%s>" % (
+            self.chord_addr[0], self.chord_addr[1], self.hash,
             str(int(self.predecessor.hash)) if self.predecessor else None,
             str(int(self.successor.hash))   if self.successor   else None)

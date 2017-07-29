@@ -7,12 +7,11 @@ from chordlib import search
 from chordlib import utils, L
 
 
+HASHFN = hashlib.md5#hashlib.sha256
 def chord_hash(data):
     import random, string
-    fake_hash = [ random.choice(string.letters) for _ in xrange(4) ]
-    random.shuffle(fake_hash)
-    return ''.join(fake_hash)[::-1]
-    return hashlib.sha256(data).digest()
+    return ''.join([ random.choice(string.letters) for _ in xrange(2) ])
+    return HASHFN(data).digest()
 
 
 BITCOUNT = len(chord_hash("0")) * 8
@@ -22,18 +21,20 @@ HASHMOD  = 2 ** BITCOUNT
 def pack_string(data):
     """ Turns a string into its unique numeric representation.
 
-    This will pack a string into a binary value by summing each individual
-    character appropriately shifted. For example,
+    Packs a string into a binary value by summing each individual character,
+    appropriately shifted. For example,
 
         "HI" is converted to 'H' + ('I' << 8), where each character is the ASCII
         digit equivalent.
 
-    Of course, long strings become incredibly large numbers. Thus, things must
-    be batched. Thankfully, Python _supports_ incredibly large numbers, so you
-    _can_ go to an arbitrary length, but I don't recommend it.
+    This assumes an ASCII charset because of the 8-bit-per-character factor.
+
+    Of course, long strings become incredibly large numbers. Python does support
+    arbitrarily large numbers, but I don't recommend using this function for
+    very long strings.
     """
-    if isinstance(data, int):
-        return data
+    if not isinstance(data, str):
+        raise TypeError("Expected str, got %s" % str(type(data)))
 
     total = 0
     for i, c in enumerate(data):
@@ -41,7 +42,6 @@ def pack_string(data):
 
     L.debug("Hash for %s -- %d", repr(data), total)
     return total
-
 
 def unpack_string(val):
     """ Turns a numeric value into a string by treating every byte as a char.
@@ -51,6 +51,14 @@ def unpack_string(val):
         string += chr(val & 0xFF)
         val >>= 8
     return string[::-1]
+
+def khash(k, m):
+    return (2 ** k) % m
+
+def moddist(a, b, m):
+    """ Finds the distance FROM a TO b in a modulo ring of size m. """
+    if b >= a: return b - a
+    return (m - a) + b
 
 
 class Hash(object):
@@ -85,8 +93,8 @@ class Hash(object):
             self._value = hashed.value
 
         else:
-            import pdb; pdb.set_trace()
-            raise ValueError("Couldn't find suitable parameters.")
+            raise TypeError("Expected value or (int, str, Hash), got: "
+                "value='%s',hashed='%s'" % (value, hashed))
 
         assert str(self) == unpack_string(int(self)), \
             "Unpacked hash must match direct hash!"
@@ -110,24 +118,9 @@ class Hash(object):
     def __ne__(self, other):
         return not (self == other)
 
-    def __str__(self):
-        return self._hash_str
-
-    def __int__(self):
-        return self._hash_int
-
-    def __repr__(self):
-        return str(int(self))
-
-
-def khash(k):
-    return (2 ** k) % HASHMOD
-
-
-def moddist(a, b, m=HASHMOD):
-    """ Finds the distance FROM a TO b in a modulo ring of size m. """
-    if b >= a: return b - a
-    return (m - a) + b
+    def __str__(self):  return self._hash_str
+    def __int__(self):  return self._hash_int % HASHMOD
+    def __repr__(self): return str(int(self))
 
 
 class Interval(object):
@@ -139,6 +132,8 @@ class Interval(object):
 
     def within(self, x):
         """ Is `x` within [start, end)? """
+        x = int(x)  # convert from `Hash` object
+        assert x < self.modulus, "checking un-%% value: %s/%d" % (x, HASHMOD)
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start, self.modulus) or \
                    utils.in_range(x, 0, self.end)
@@ -147,6 +142,8 @@ class Interval(object):
 
     def within_open(self, x):
         """ Is `x` within (start, end)? """
+        x = int(x)  # convert from `Hash` object
+        assert x < self.modulus, "checking un-%% value: %s/%d" % (x, HASHMOD)
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start + 1, self.modulus) or \
                    utils.in_range(x, 0, self.end)
@@ -155,6 +152,8 @@ class Interval(object):
 
     def within_closed(self, x):
         """ Is `x` within [start, end]? """
+        x = int(x)  # convert from `Hash` object
+        assert x < self.modulus, "checking un-%% value: %s/%d" % (x, HASHMOD)
         if self.end < self.start:   # interval wraps around mod boundary
             return utils.in_range(x, self.start, self.modulus) or \
                    utils.in_range(x, 0, self.end + 1)
@@ -175,12 +174,12 @@ class Interval(object):
 class Finger(Interval):
     """ Represents a single entry in a finger table.
     """
-    BACKUP_LENGTH = 5   # store a history of nodes as fallbacks
+    NODE_COUNT = 5      # fallback nodes (incl. current node)
 
     def __init__(self, start, end, node=None, mod=HASHMOD):
         super(Finger, self).__init__(start, end, mod)
         self.nodes = []
-        if not node:
+        if node is not None:    # set initial node, if any
             self.nodes.append(node)
 
     @property
@@ -189,12 +188,16 @@ class Finger(Interval):
 
     @node.setter
     def node(self, value):
+        """ Sets a new latest node value, maintaining backup list length.
+        """
         assert value, "Can't add non-nodes! %s" % value
-        if len(self.nodes) > Finger.BACKUP_LENGTH:
-            self.nodes.pop(0)
+        while len(self.nodes) >= Finger.NODE_COUNT:
+            self.nodes.pop(0)   # at least one slot for the new value
         self.nodes.append(value)
 
     def remove(self):
+        """ Removes the latest node from the entry; there are no length checks.
+        """
         self.nodes.pop(-1)
 
     def __repr__(self): return str(self)
@@ -207,36 +210,13 @@ class FingerTable(object):
 
     The finger table is a list that is rotated around the root node (that is,
     the node this table is established for). On initialization, it's established
-    to match the size of the bit-length of the hash (SHA1 is 128 bits).
+    to match the size of the bit-length of the hash.
 
     TODO: Optimize this.
     """
 
     def __init__(self, node, bitcount=BITCOUNT):
         """ Initializes the finger table with 2^i intervals around the root.
-
-        >>> from collections import namedtuple
-        >>> cn = namedtuple("ChordNode", "hash")
-        >>> ft = FingerTable(cn(1), 4)   # Create a 4-bit, 16-node ring.
-        >>> print ft
-        [ [2, 3) | None,
-          [3, 5) | None,
-          [5, 9) | None,
-          [9, 1) | None ]
-        >>> for _ in [ 3, 7, 0, 2 ]: ft.insert(cn(_))
-        >>> print ft
-        [ [2, 3) | ChordNode(hash=2),
-          [3, 5) | ChordNode(hash=3),
-          [5, 9) | ChordNode(hash=7),
-          [9, 1) | ChordNode(hash=0) ]
-        >>> ft.insert(cn(6))    # test regular distance
-        >>> ft.insert(cn(14))   # test mod distance
-        >>> ft.insert(cn(15))   # ensure no-op
-        >>> print ft
-        [ [2, 3) | ChordNode(hash=2),
-          [3, 5) | ChordNode(hash=3),
-          [5, 9) | ChordNode(hash=6),
-          [9, 1) | ChordNode(hash=14) ]
         """
         self.modulus = 2 ** bitcount
         self.seen_nodes = set()
@@ -265,8 +245,8 @@ class FingerTable(object):
             # This node is closer to the start of the interval than the existing
             # node.
             if f.node is None or (
-               moddist(f.start, int(node.hash)) < \
-               moddist(f.start, int(f.node.hash))):
+               moddist(f.start, int(node.hash), self.modulus) < \
+               moddist(f.start, int(f.node.hash), self.modulus)):
                 f.node = node
 
     def remove(self, node):

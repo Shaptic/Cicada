@@ -41,6 +41,9 @@ quit, q
 """
 
 
+import packetlib.chord as chordpkt
+import chordlib.fingertable as fng
+
 # Persistent nodes in the shell.
 NODES = {}
 
@@ -85,7 +88,7 @@ def validate_node(node):
 def on_list():
     for key, node in NODES.items():
         print "Node identifier:", key
-        print "    Listening on: %s:%d" % node.local_addr
+        print "    Listening on: %s:%d" % node.chord_addr
         print "    Connected peers:", len(node.peers)
 
 def on_create(serve):
@@ -119,7 +122,7 @@ def on_join(node, address):
         print "Trying as a node ID."
         other_node, _ = validate_node(address)
         if not other_node: return
-        address = other_node.local_addr
+        address = other_node.chord_addr
     else:
         address = addr
 
@@ -142,6 +145,13 @@ def on_lookup(node, address):
 
     root, node = validate_node(node)
     if not root: return
+
+    print "Lookup up %s:%d..." % address
+    try:
+        msg = chordpkt.LookupRequest.make_packet(
+            root.hash, fng.Hash(hashed=fng.chord_hash("%s:%d" % address)))
+
+        # root.
 
     return True
 

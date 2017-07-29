@@ -13,7 +13,9 @@ from chordlib import utils as chutils
 
 
 class Stabilizer(commlib.InfiniteThread):
-    """ Performs the Chord stabilization algorithm on a particular node. """
+    """ Performs the Chord stabilization algorithm on a particular node.
+    """
+
     def __init__(self, node):
         super(Stabilizer, self).__init__(name="StabilizerThread")
         self.node = node
@@ -29,20 +31,25 @@ class ChordNode(object):
 
     There are certain properties -- such as the data hash -- which can be
     computed locally. All other properties may involve network communication, so
-    we throw errors on those.
+    we don't define those.
     """
 
-    def __init__(self, listener_addr):
+    def __init__(self, node_hash, listener_addr):
+        """ Initializes internal structures.
+
+        All Chord nodes exist in their own "ring" on initialization. They have
+        an empty finger table and no predecessor reference.
+
+        :listener_addr  a 2-tuple (address, port) pair describing the address
+                        on which the node is listening for new connections
+        """
         super(ChordNode, self).__init__()
-        #
-        # All Chord nodes exist in their own "ring" on initialization. They have
-        # an empty finger table (save themselves) and no predecessor reference.
-        #
-        self.data = None
+
+        self._hash = node_hash
         self.predecessor = None
-        self.fingers = fingertable.FingerTable(self)
-        self.local_addr = (socket.gethostbyname(listener_addr[0]),
+        self.chord_addr = (socket.gethostbyname(listener_addr[0]),
                            listener_addr[1])
+        self.fingers = fingertable.FingerTable(self)
 
     def add_node(self, node):
         """ Adds a node to the internal finger table.
@@ -50,37 +57,29 @@ class ChordNode(object):
         This means proper ordering in the finger table with respect to the
         node's hash value.
         """
+        if not isinstance(node, ChordNode):
+            raise TypeError("expected ChordNode, got %s" % repr(node))
+
         L.debug("add_node::self: %s", str(self))
         L.debug("add_node::node: %s", str(node))
-        assert isinstance(node, ChordNode), "add_node: not a ChordNode object!"
-
         self.fingers.insert(node)
 
-    def join_ring(self, address):
-        """ Joins a Chord ring via a node in the ring. """
-        raise NotImplementedError
-
-    def stabilize(self):
-        """ Runs the Chord stabilization algorithm. """
-        raise NotImplementedError
-
     def finger(self, i):
-        assert len(self.fingers) <= fingertable.BITCOUNT, "Finger table too long!"
         return self.fingers.finger(i)
 
     @property
     def successor(self):
-        # assert self.fingers.real_length >= 1, "successor: node is isolated!"
         return self.finger(0).node
 
     @property
-    def hash(self):
-        return self._hash   # undefined in this class
-
+    def hash(self):     return self._hash
     def __repr__(self): return str(self)
+    def __str__(self):  return "<ChordNode | %s:%d>" % self.chord_addr
 
 
-def walk_ring(root, maxcount=10):
+def walk_ring(root, max_count=10, on_node=lambda x: None):
+    """ Walks a Chord ring starting from the root via successor pointers.
+    """
     count = 0
     start = root
     next_node = start.successor
@@ -88,12 +87,8 @@ def walk_ring(root, maxcount=10):
     yield start
     while next_node is not None and \
           root != next_node and \
-          count < maxcount:   # so we don't do it too much if there's an error
+          count < max_count:   # so we don't do it too much if there's an error
         yield next_node
-        nextOne = next_node.successor
+        on_node(next_node)
+        next_node = next_node.successor
         count += 1
-
-
-def print_ring(root):
-    for node in walk_ring(root):
-        print node

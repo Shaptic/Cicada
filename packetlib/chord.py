@@ -2,7 +2,7 @@ import struct
 import collections
 
 from chordlib  import fingertable
-from chordlib  import remotenode
+from chordlib  import chordnode
 from packetlib import message
 from packetlib import utils as pktutils
 
@@ -95,8 +95,8 @@ class InfoResponse(message.BaseMessage):
         """ Creates internal structures for the INFO message.
 
         :sender     a `Hash` of the peer sending this message
-        :succ       successor node (inc. hash + listener address)
         :pred       predecessor node (inc. hash + listener address)
+        :succ       successor node (inc. hash + listener address)
         """
         super(InfoResponse, self).__init__(self.TYPE)
 
@@ -111,8 +111,8 @@ class InfoResponse(message.BaseMessage):
         self.sender = sender
         self.succ_hash = succ.hash
         self.pred_hash = pred.hash
-        self.succ_addr = succ.local_addr
-        self.pred_addr = pred.local_addr
+        self.succ_addr = succ.chord_addr
+        self.pred_addr = pred.chord_addr
 
     def pack(self):
         return struct.pack('!' + self.FORMAT,
@@ -130,10 +130,8 @@ class InfoResponse(message.BaseMessage):
         succ_hash, bytestream = PackedHash.unpack(bytestream)
         succ_addr, bytestream = PackedAddress.unpack(bytestream)
 
-        FakeSocket = 0xFA#KE
-        pn = remotenode.RemoteNode(pred_hash, pred_addr, pred_addr, FakeSocket)
-        sn = remotenode.RemoteNode(succ_hash, succ_addr, succ_addr, FakeSocket)
-
+        pn = chordnode.ChordNode(fingertable.Hash(hashed=pred_hash), pred_addr)
+        sn = chordnode.ChordNode(fingertable.Hash(hashed=succ_hash), succ_addr)
         return cls(send_hash, pn, sn)
 
 
@@ -193,7 +191,7 @@ class JoinResponse(InfoResponse):
         super(JoinResponse, self).__init__(*args)
         self.request_successor = req_succ
         self.req_succ_hash = req_succ.hash
-        self.req_succ_addr = req_succ.local_addr
+        self.req_succ_addr = req_succ.chord_addr
 
     def pack(self):
         old_fmt = self.FORMAT
@@ -203,8 +201,8 @@ class JoinResponse(InfoResponse):
 
         return struct.pack('!' + self.FORMAT,
             embedded,
-            PackedHash(self.request_successor.hash).pack(),
-            PackedAddress(*self.request_successor.local_addr).pack())
+            PackedHash(self.req_succ_hash).pack(),
+            PackedAddress(*self.req_succ_addr).pack())
 
     @classmethod
     def unpack(cls, bytestream):
@@ -214,9 +212,8 @@ class JoinResponse(InfoResponse):
         req_succ_hash, bytestream = PackedHash.unpack(bytestream)
         req_succ_addr, bytestream = PackedAddress.unpack(bytestream)
 
-        FakeSocket = 0xFA#KE
-        rsn = remotenode.RemoteNode(req_succ_hash,
-            req_succ_addr, req_succ_addr, FakeSocket)
+        rsn = chordnode.ChordNode(fingertable.Hash(hashed=req_succ_hash),
+            req_succ_addr)
 
         return cls(rsn, info.sender, info.predecessor, info.successor)
 
@@ -229,12 +226,12 @@ class NotifyRequest(message.BaseMessage):
         super(NotifyRequest, self).__init__(self.TYPE)
 
 
-class NotifyResponse(JoinResponse):
-    RAW_FORMAT = JoinResponse.RAW_FORMAT
+class NotifyResponse(InfoResponse):
+    RAW_FORMAT = InfoResponse.RAW_FORMAT
     TYPE = message.MessageType.MSG_CH_NOTIFYR
 
     def __init__(self, *args):
-        super(NotifyResponse, self).__init__(self.TYPE)
+        super(NotifyResponse, self).__init__(*args)
 
 
 class LookupRequest(message.BaseMessage):
@@ -292,7 +289,7 @@ class LookupResponse(message.BaseMessage):
 
     def pack(self):
         return struct.pack('!' + self.FORMAT,
-            PackedHash(self.node).pack(),
+            PackedHash(self.sender).pack(),
             PackedHash(self.lookup).pack(),
             PackedHash(self.mapped).pack(),
             PackedAddress(*self.listener).pack(),

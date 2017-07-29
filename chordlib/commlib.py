@@ -67,10 +67,13 @@ class ReadQueue(object):
 
     def read(self, data):
         """ Processes some data into the queue.
-        """
-        self.queue_lock.acquire()
 
+        This is done in a threadsafe way, because another read may be called
+        before this one is processed, if reads are done asynchronously from
+        the queueing.
+        """
         try:
+            self.queue_lock.acquire()
             self.pending += data
             index = self.pending.find(self.BUFFER_END_BYTES)
             if index == -1: return
@@ -81,7 +84,7 @@ class ReadQueue(object):
             self.queue.append(pkt)
 
         except message.UnpackException, e:
-            L.warning("Failed to parse incoming message: %s", repr(self.pending))
+            L.warning("Failed to parse inbound message: %s", repr(self.pending))
             message.MessageContainer.debug_packet(self.pending)
             raise
 
@@ -101,37 +104,12 @@ class ReadQueue(object):
         return r
 
 
-class SignalableThread(threading.Thread):
-    """ A utility base thread to run a signal function when something happens.
-    """
-
-    def __init__(self, on_ready, **kwargs):
-        super(SignalableThread, self).__init__(**kwargs)
-        self.handler = on_ready
-
-    def signal(self):
-        self.handler(self)
-
-
 class InfiniteThread(threading.Thread):
-    """ A utility base thread to run a method forever until its signalled.
-
-    >>> import time
-    >>> class Test(InfiniteThread):
-    ...     def _loop_method(self):
-    ...         time.sleep(1)
-    ...         print 1
-    ...
-    >>> tester_thread = Test()
-    >>> tester_thread.start()
-    >>> tester_thread.stop_running()
-    >>> tester_thread.join(1000)
-    1
+    """ An abstract thread to run a method forever until its stopped.
     """
-
-    def __init__(self, pause_length=0, **kwargs):
+    def __init__(self, pause=0, **kwargs):
         super(InfiniteThread, self).__init__(**kwargs)
-        self.sleep = pause_length
+        self.sleep = pause
         self.running = True
         self.setDaemon(True)
 
@@ -155,24 +133,24 @@ class ListenerThread(InfiniteThread):
     After the connection is established, the socket will still continue to
     accept connections from further clients.
     """
-    TIMEOUT = 10     # how long should we wait for the socket to be ready?
 
-    def __init__(self, sock, on_accept):
+    def __init__(self, sock, on_accept, timeout=10):
         """ Creates a thread to listen on a socket.
 
-        :sock       A socket instance that is ready to accept clients.
-        :on_accept  A callable handler that is called when clients connect.
-                        on_accept(client_address, client_socket)
+        :sock           a socket instance that is ready to accept clients.
+        :on_accept      a callable handler that is called when clients connect.
+                            on_accept(client_address, client_socket)
+        :timeout[=10]   how long should we wait (s) for the socket to be ready?
         """
-        super(ListenerThread, self).__init__(name="ListenerThread",
-            pause_length=0.2)
+        super(ListenerThread, self).__init__(name="ListenerThread", pause=0.2)
 
         self._on_accept = on_accept
+        self.timeout = timeout
         self.listener = sock
 
     def _loop_method(self):
         rd, wr, er = select.select([ self.listener ], [], [ self.listener ],
-                                   ListenerThread.TIMEOUT)
+                                   self.timeout)
         if rd:
             client, addr = self.listener.accept()
             L.info("Incoming peer: %s:%d", addr[0], addr[1])
@@ -198,8 +176,12 @@ class SocketProcessor(InfiniteThread):
     """
 
     class RequestResponse(object):
-        """ A pair for the sent request and its response.
+        """ A pair of a sent request and its corresponding response.
+
+        When the response is received (`trigger(...)`), the event is set. No
+        checking is done on the response; that should be done at a higher level.
         """
+
         def __init__(self, message, event=None):
             self.request = message
             self.response = None
@@ -210,17 +192,22 @@ class SocketProcessor(InfiniteThread):
             self.response = response
             if self.event is not None: self.event.set()
 
+
     class MessageStream(object):
         """ A one-way series of messages with increasing sequence numbers.
         """
         def __init__(self, request_handler, starting_seq=None):
             super(SocketProcessor.MessageStream, self).__init__()
 
-            self.base_seq = starting_seq or random.randint(1, 2 ** 32 - 1)
+            # We make the starting sequence a random value between [1, 2^31),
+            # which lets us have a full 2^31 messages before overflowing in the
+            # worst case.
+            self.base_seq = starting_seq or random.randint(1, 2 ** 31)
             self.current  = self.base_seq
 
             self.handler = request_handler
-            self.pending_requests = []
+            self.complete_requests = chutils.FixedStack(24)
+            self.pending_requests = []      # [ RequestResponse ]
             self.queue = ReadQueue()
 
         def finalize(self, msg):
@@ -235,6 +222,17 @@ class SocketProcessor(InfiniteThread):
             self.pending_requests.append(
                 SocketProcessor.RequestResponse(request, event))
 
+        def complete(self, pair, responder, response):
+            """ Signifies that a request-response pair is complete.
+            """
+            if pair not in self.pending_requests:
+                raise ValueError("expected valid pair, not found! %s" % pair)
+
+            self.complete_requests.append(pair)
+            self.pending_requests.remove(pair)
+            pair.trigger(responder, response)
+
+
     def __init__(self, on_error):
         """ Creates a thread instance.
 
@@ -242,7 +240,7 @@ class SocketProcessor(InfiniteThread):
         functions for each one. These will be called for all messages
         indiscriminantly if there is no handler for a request you sent.
 
-        :on_error   A generic handler that will be called whenever a socket
+        :on_error   a generic handler that will be called whenever a socket
                     errors out or is closed. Called like so:
 
                 on_error(socket_erroring_out, graceful=True|False)
@@ -250,28 +248,28 @@ class SocketProcessor(InfiniteThread):
             Where `graceful` indicates whether it was a cleanly-closed socket
             (that is, no data was received) or if it was an exception thrown.
         """
-        super(SocketProcessor, self).__init__(pause_length=0.2)
+        super(SocketProcessor, self).__init__(pause=0.2)
 
-        # dict -> { socket: MessageStream }
-        self.sockets = { }
+        self.sockets = { }  # dict -> { socket: MessageStream }
         self.on_error = on_error
 
-    def add_socket(self, peer_socket, on_request):
+    def add_socket(self, peer, on_request):
         """ Adds a new socket to manage.
 
-        :peer_socket    A socket object to read from.
-        :on_request     A function that accepts and processes a generic
+        :peer           a socket object to read from.
+        :on_request     a function that accepts and processes a generic
                         message on the socket.
 
-            This is called when data is received but there is no expecting
-            handler. It is called with these args:
                 on_request(socket_received_on, raw_data_received)
+
+            This is called when data is received but there is no expecting
+            handler, as is typically the case for request messages.
         """
-        if not isinstance(peer_socket, ThreadsafeSocket):
+        if not isinstance(peer, ThreadsafeSocket):
             raise TypeError("Initialized processor thread without socket.")
 
-        L.debug("Added %s to processing list", repr(peer_socket.getpeername()))
-        self.sockets[peer_socket] = SocketProcessor.MessageStream(on_request)
+        L.debug("Added %s to processing list", repr(peer.getpeername()))
+        self.sockets[peer] = SocketProcessor.MessageStream(on_request)
 
     def prepare_request(self, receiver, message, event):
         """ Adds an event to wait for a response to the given message.
@@ -287,73 +285,17 @@ class SocketProcessor(InfiniteThread):
             raise ValueError("Socket not registered with this processor.")
 
         stream = self.sockets[receiver]
-        stream.finalize(message)
+        stream.finalize(message)    # inject sequence number
         stream.add_request(message, event)
 
-    def _loop_method(self):
-        """ Reads the sockets periodically and calls request handlers.
-        """
-        socket_list = self.sockets.keys()
-        if not socket_list: return
-
-        rd, _, er = select.select(socket_list, [], socket_list, 1)
-
-        for sock in er:
-            self.sockets.pop(sock)
-            self.on_error(sock, graceful=False)
-
-        for sock in rd:
-            try:
-                data = sock.recv(message.MessageContainer.MIN_MESSAGE_LEN)
-                if not data:
-                    L.debug("A socket was closed (no data)!")
-                    self.sockets.pop(sock)
-                    self.on_error(sock, graceful=True)
-                    continue
-
-            except socket.error, e:
-                L.error("Socket errored out during select(): %s", str(e))
-                self.sockets.pop(sock)
-                self.on_error(sock, graceful=False)
-                continue
-
-            L.debug("Received raw message from %s: %s",
-                repr(sock.getpeername()), repr(data))
-
-            stream = self.sockets[sock]
-            stream.queue.read(data)
-            while stream.queue.ready:
-                msg = stream.queue.pop()
-                L.debug("Full message received: %s", repr(msg))
-
-                # For responses (they include an "original" member), we call the
-                # respective response handler if there's one pending. Otherwise,
-                # both for requests and unexpected responses, we call the
-                # generic handler.
-
-                if msg.original is None:
-                    stream.handler(sock, msg)
-                    continue
-
-                for pair in stream.pending_requests:
-                    # FIXME: This is not an efficient way to consider a request
-                    #        to be "finished."
-                    # if pair.response is not None:
-                    #     continue
-
-                    if pair.request.seq == msg.original.seq:
-                        pair.trigger(sock, msg)
-                        # stream.pending_requests.remove(pair)
-                        break
-                else:
-                    stream.handler(sock, msg)
-
     def response(self, peer, response):
-        """ Sends a response to the given peer, correlated with the request.
+        """ Sends a response to the given peer.
+
+        The response should already be correlated with the request (by passing
+        `original=...` when creating the packet). No validation is done on this.
         """
         L.debug("Sending response to message: %s", response)
-        data = response.pack()
-        return peer.sendall(data)
+        return peer.sendall(response.pack())
 
     def request(self, peer, msg, on_response, wait_time=None):
         """ Initiates a request on a particular thread.
@@ -362,8 +304,8 @@ class SocketProcessor(InfiniteThread):
         :msg                the MessageContainer to send on the thread socket
         :on_response        the callable to run when the response is received.
                                 on_response(receiver_socket, response)
-        :wait_time[=None]  in seconds, the amount to wait for a response.
-            If it's set to None, then we wait an indefinite number of time for
+        :wait_time[=None]   in seconds, the amount to wait for a response.
+            If it's set to `None`, then we wait an indefinite number of time for
             the response, which is a risky operation as then there's no way to
             cancel it.
 
@@ -371,10 +313,12 @@ class SocketProcessor(InfiniteThread):
                         Otherwise, `False` is returned on timeout.
         """
         if not isinstance(peer, ThreadsafeSocket):
-            raise TypeError("request() requires a raw socket.")
+            raise TypeError("expected a raw (threadsafe) socket, got %s" % (
+                str(type(peer))))
 
         if not isinstance(msg, message.MessageContainer):
-            raise TypeError("request() requires a proper MessageContainer.")
+            raise TypeError("expected a MessageContainer, got %s" % (
+                str(type(msg))))
 
         evt = threading.Event()     # signaled when response is ready
 
@@ -388,12 +332,78 @@ class SocketProcessor(InfiniteThread):
         peer.sendall(msg.pack())
         entry = self.sockets[peer]
         if not evt.wait(timeout=wait_time):
-            if wait_time:   # no message if intentional timeout
+            if wait_time:   # don't show a message if it's intentional
                 L.warning("Event expired (timeout=%s).", repr(wait_time))
+            return False    # still indicate it, though
+
+        # Find the matching request in the completed table.
+        for pair in entry.complete_requests.list:
+            if pair.request.seq == msg.seq:
+                result = pair.response
+                break
+        else:
+            L.critical("The event was triggered, but the response wasn't found "
+                "in the completed section!")
             return False
 
-        # TODO: The -1 access is a race condition.
-        L.debug("Received response for message: %s", repr(
-            entry.pending_requests[-1].response))
+        L.debug("Received response for message: %s", repr(result))
+        return on_response(peer, result)
 
-        return on_response(peer, entry.pending_requests[-1].response)
+    def _loop_method(self):
+        """ Reads the sockets periodically and calls request handlers.
+        """
+        socket_list = self.sockets.keys()
+        if not socket_list: return      # easy out on no-op
+
+        readers, _, errors = select.select(socket_list, [], socket_list, 1)
+
+        for sock in errors:
+            self.sockets.pop(sock)
+            self.on_error(sock, graceful=False)
+
+        for sock in readers:
+            try:
+                data = sock.recv(message.MessageContainer.MIN_MESSAGE_LEN)
+                if not data:
+                    L.debug("A socket was closed (no data)!")
+                    self.sockets.pop(sock)
+                    self.on_error(sock, graceful=True)
+                    continue
+
+            except socket.error, e:
+                L.error("Socket errored out during recv(): %s", str(e))
+                self.sockets.pop(sock)
+                self.on_error(sock, graceful=False)
+                continue
+
+            L.debug("Received raw message from %s: %s",
+                repr(sock.getpeername()), repr(data))
+
+            stream = self.sockets[sock]
+            stream.queue.read(data)
+            while stream.queue.ready:
+                msg = stream.queue.pop()
+                L.debug("Full message received: %s", repr(msg))
+
+                #
+                # For responses (they include an "original" member), we call the
+                # respective response handler if there's one pending. Otherwise,
+                # both for requests and unexpected responses, we call the
+                # generic handler.
+                #
+
+                if msg.original is None:
+                    stream.handler(sock, msg)
+                    continue
+
+                for pair in stream.pending_requests:
+                    # FIXME: This is not an efficient way to consider a request
+                    #        to be "finished."
+                    # if pair.response is not None:
+                    #     continue
+
+                    if pair.request.seq == msg.original.seq:
+                        stream.complete(pair, sock, msg)
+                        break
+                else:
+                    stream.handler(sock, msg)
