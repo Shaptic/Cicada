@@ -221,8 +221,6 @@ class LocalNode(chordnode.ChordNode):
             L.critical("Entering a NotImplemented code path!")
             # self.fingers.set_successor(x)
 
-        import pdb; pdb.set_trace()
-
         if x.hash == self.hash:
             L.debug("Nothing to notify -- we are successor.predecessor")
             return
@@ -333,16 +331,24 @@ class LocalNode(chordnode.ChordNode):
         self.processor.add_socket(client_socket, self.process)
 
     def on_info_request(self, sock, msg):
-        if self.predecessor is None:
-            pred = self
-        else:
-            pred = self.predecessor
+        """ Processes an INFO message and responds with our ring details.
+        """
 
-        if self.successor is None:
-            succ = chordnode.ChordNode(fingertable.Hash(value="000"),
-                ("localhost", 0))
-        else:
-            succ = self.successor
+        #
+        # TODO: Race condition between JOIN response and INFO request? Consider:
+        #   - A joins B, sending JOIN request.
+        #   - B responds, sending JOIN-RESP.
+        #   - B calls stabilization, sending INFO.
+        #   - A hasn't processed the JOIN-RESP yet.
+        #   - A receives INFO, this assertion is triggered.
+        #
+        if self.predecessor is None and self.successor is None:
+            L.warning("Received a request for information, but we aren't done "
+                      "processing our join request yet!")
+            return
+
+        pred = self.predecessor or self.successor
+        succ = self.successor   or pred
 
         infor_msg = chordpkt.InfoResponse.make_packet(
             self.hash, pred, succ, original=msg)
