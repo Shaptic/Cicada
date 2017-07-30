@@ -42,7 +42,7 @@ quit, q
 
 
 import packetlib.chord as chordpkt
-import chordlib.fingertable as fng
+import chordlib.routing as fng
 
 # Persistent nodes in the shell.
 NODES = {}

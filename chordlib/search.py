@@ -2,50 +2,52 @@ import enum
 
 
 class BSearchMode(enum.Enum):
+    """ Specifies the mode in which binary searches are performed.
+
+    This controls the behavior that occurs if the target value isn't found in
+    the array being searched.
+
+        `EXACT`     -1 is returned.
+
+        `PRED`      The index of the first element that is _smaller_ than the
+                    provided target element is returned. If there are no smaller
+                    elements, 0 is returned.
+
+        `SUCC`      The index of the first element that would be _larger_ than
+                    the provided target element is returned. If there are no
+                    larger elements, the length of the array is returned.
+    """
     EXACT = 1
-    PREDECESSOR = 2
-    SUCCESSOR = 3
+    PRED = 2
+    SUCC = 3
 
 
 def bsearch(array, target, func=lambda x: x, mode=BSearchMode.EXACT):
     """ Performs binary search on a sorted array.
 
-    Based on the mode, this will return different things if the target value is
-    not found.
-
-    EXACT:          Returns -1.
-
-    PREDECESSOR:    Returns the index of the first element that is _smaller_
-                    than the provided target element. If there are no smaller
-                    elements, returns 0.
-
-    SUCCESSOR:      Returns the index of the first element that would be
-                    _larger_ than the provided target element. If there are no
-                    larger elements, returns the length of the array.
-
     >>> arr = [ 5 ]
-    >>> bsearch(arr, 10, mode=BSearchMode.SUCCESSOR)
+    >>> bsearch(arr, 10, mode=BSearchMode.SUCC)
     1
-    >>> bsearch(arr, 2, mode=BSearchMode.SUCCESSOR)
+    >>> bsearch(arr, 2, mode=BSearchMode.SUCC)
     0
-    >>> bsearch(arr, 10, mode=BSearchMode.PREDECESSOR)
+    >>> bsearch(arr, 10, mode=BSearchMode.PRED)
     0
-    >>> bsearch(arr, 2, mode=BSearchMode.PREDECESSOR)
+    >>> bsearch(arr, 2, mode=BSearchMode.PRED)
     0
     >>> arr = [ 2*i for i in xrange(6) ]
     >>> arr
     [0, 2, 4, 6, 8, 10]
     >>> bsearch(arr, 2)
     1
-    >>> bsearch(arr, 2, mode=BSearchMode.PREDECESSOR)
+    >>> bsearch(arr, 2, mode=BSearchMode.PRED)
     1
     >>> bsearch(arr, 3)
     -1
-    >>> bsearch(arr, 3, mode=BSearchMode.PREDECESSOR)
+    >>> bsearch(arr, 3, mode=BSearchMode.PRED)
     1
-    >>> bsearch(arr, 3, mode=BSearchMode.SUCCESSOR)
+    >>> bsearch(arr, 3, mode=BSearchMode.SUCC)
     2
-    >>> bsearch(arr, 12, mode=BSearchMode.SUCCESSOR)
+    >>> bsearch(arr, 12, mode=BSearchMode.SUCC)
     6
     >>> # Just make sure that the lambda approach works.
     >>> import collections
@@ -70,7 +72,7 @@ def bsearch(array, target, func=lambda x: x, mode=BSearchMode.EXACT):
 
     if mode == BSearchMode.EXACT:
         return -1
-    elif mode == BSearchMode.PREDECESSOR:
+    elif mode == BSearchMode.PRED:
         return max(0, left - 1)
 
     # Successor mode, special case.

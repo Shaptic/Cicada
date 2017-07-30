@@ -34,7 +34,7 @@ import socket
 
 from chordlib import commlib
 from chordlib import chordnode
-from chordlib import fingertable
+from chordlib import routing
 
 class RemoteNode(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
@@ -78,9 +78,9 @@ class RemoteNode(chordnode.ChordNode):
         self.complete = False   # set when the socket closes
 
         if node_hash is None:   # not set for peer on first join
-            h = fingertable.Hash(value="notset")
+            h = routing.Hash(value="notset")
         else:
-            h = fingertable.Hash(hashed=node_hash)
+            h = routing.Hash(hashed=node_hash)
 
         super(RemoteNode, self).__init__(h, listener_addr)
 

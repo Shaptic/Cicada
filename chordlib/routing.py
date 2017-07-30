@@ -171,13 +171,13 @@ class Interval(object):
         return "[%d, %s)" % (self.start, self.end)
 
 
-class Finger(Interval):
+class Route(Interval):
     """ Represents a single entry in a finger table.
     """
     NODE_COUNT = 5      # fallback nodes (incl. current node)
 
     def __init__(self, start, end, node=None, mod=HASHMOD):
-        super(Finger, self).__init__(start, end, mod)
+        super(Route, self).__init__(start, end, mod)
         self.nodes = []
         if node is not None:    # set initial node, if any
             self.nodes.append(node)
@@ -191,7 +191,7 @@ class Finger(Interval):
         """ Sets a new latest node value, maintaining backup list length.
         """
         assert value, "Can't add non-nodes! %s" % value
-        while len(self.nodes) >= Finger.NODE_COUNT:
+        while len(self.nodes) >= Route.NODE_COUNT:
             self.nodes.pop(0)   # at least one slot for the new value
         self.nodes.append(value)
 
@@ -205,7 +205,7 @@ class Finger(Interval):
         return "%s | %s" % (Interval.__str__(self), self.node)
 
 
-class FingerTable(object):
+class RoutingTable(object):
     """ Establishes a finger table for a particular node.
 
     The finger table is a list that is rotated around the root node (that is,
@@ -223,14 +223,14 @@ class FingerTable(object):
 
         node_hash = int(node.hash)
         self.entries = [
-            Finger((node_hash + 2 ** i) % self.modulus,
+            Route((node_hash + 2 ** i) % self.modulus,
                    (node_hash + 2 ** (i + 1)) % self.modulus,
                    None, self.modulus) \
             for i in xrange(bitcount)
         ]
 
         self.root = node
-        self.local = Finger(self.entries[-1].end, int(self.root.hash), self.root)
+        self.local = Route(self.entries[-1].end, int(self.root.hash), self.root)
 
     def insert(self, node):
         """ Adds a node to the finger table if it's better than any successors.
@@ -358,29 +358,3 @@ class FingerTable(object):
         return "[ %s ]" % ",\n  ".join([
             str(self.finger(i)) for i in xrange(len(self))
         ])
-
-
-def optimize_finger_table(fingers):
-    """ Compresses a finger table by merging intervals with the same successor.
-
-    TODO: Perform this optimization in-place? Is this even *necessary*?
-          How do you insert things into it efficiently? Maybe use a hash-map
-          of ranges? That is, { 1: node (implies [1, 5)), 5: node, ... }
-    """
-    if not fingers: return fingers
-
-    merged = []
-    maxlen = len(fingers) - 1
-
-    inspect = fingers[0]
-    merged_start = inspect.start
-    merged_end = inspect.end
-
-    for old in xrange(0, maxlen):
-        if fingers[old + 1].node == inspect.node:
-            merged_end = fingers[old + 1].end
-        else:
-            merged.append(Finger(merged_start, merged_end, inspect.node))
-            inspect = fingers[old + 1]
-
-    return merged

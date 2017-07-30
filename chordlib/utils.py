@@ -61,11 +61,22 @@ def find_last(string, char, start=0):
 
     return index
 
-def nextmul(n, rd=8):
-    """ Rounds a value up to its nearest multiple of 8.
+def nextmul(n, rd):
+    """ Rounds a value `n` up to its nearest multiple of `rd`.
 
-    >>> next_po2(7), next_po2(8), next_po2(9)
+    >>> nextmul(7), nextmul(8), nextmul(9)
     (8, 8, 16)
     """
+    return prevmul(n, rd) + rd
+
+def prevmul(n, rd):
+    """ Rounds a value `n` down to its nearest multiple of `rd`.
+    """
     m = n % rd
-    return n - m + rd if m else n
+    return n - m if m else n
+
+def prevpow(n, e):
+    """ Returns the next-lowest power of `e` of the value `n` (& the exponent).
+    """
+    lg = math.log(n, e)
+    return e ** int(lg), lg

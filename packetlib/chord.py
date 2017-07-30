@@ -1,7 +1,7 @@
 import struct
 import collections
 
-from chordlib  import fingertable
+from chordlib  import routing
 from chordlib  import chordnode
 from packetlib import message
 from packetlib import utils as pktutils
@@ -44,12 +44,12 @@ class PackedHash(PackedObject):
     """
     RAW_FORMAT = [
         "H",    # hash length, in bytes (32 for SHA256)
-        "%ds" % (fingertable.BITCOUNT / 8),
+        "%ds" % (routing.BITCOUNT / 8),
                 # SHA256 hash
     ]
 
     def __init__(self, hashval):
-        if not isinstance(hashval, fingertable.Hash):
+        if not isinstance(hashval, routing.Hash):
             raise TypeError("Can only serialize Hash objects.")
 
         self.hashval = hashval
@@ -68,7 +68,7 @@ class PackedHash(PackedObject):
         hashlen, offset = get(0)
         nhash,   offset = get(1)
 
-        return fingertable.Hash(hashed=nhash), bytestream[offset:]
+        return routing.Hash(hashed=nhash), bytestream[offset:]
 
 
 class InfoRequest(message.BaseMessage):
@@ -100,7 +100,7 @@ class InfoResponse(message.BaseMessage):
         """
         super(InfoResponse, self).__init__(self.TYPE)
 
-        if any([not isinstance(x, fingertable.Hash) for x in (
+        if any([not isinstance(x, routing.Hash) for x in (
             sender, succ.hash, pred.hash)
         ]):
             raise TypeError("Please provide a Hash object.")
@@ -130,8 +130,8 @@ class InfoResponse(message.BaseMessage):
         succ_hash, bytestream = PackedHash.unpack(bytestream)
         succ_addr, bytestream = PackedAddress.unpack(bytestream)
 
-        pn = chordnode.ChordNode(fingertable.Hash(hashed=pred_hash), pred_addr)
-        sn = chordnode.ChordNode(fingertable.Hash(hashed=succ_hash), succ_addr)
+        pn = chordnode.ChordNode(routing.Hash(hashed=pred_hash), pred_addr)
+        sn = chordnode.ChordNode(routing.Hash(hashed=succ_hash), succ_addr)
         return cls(send_hash, pn, sn)
 
 
@@ -212,7 +212,7 @@ class JoinResponse(InfoResponse):
         req_succ_hash, bytestream = PackedHash.unpack(bytestream)
         req_succ_addr, bytestream = PackedAddress.unpack(bytestream)
 
-        rsn = chordnode.ChordNode(fingertable.Hash(hashed=req_succ_hash),
+        rsn = chordnode.ChordNode(routing.Hash(hashed=req_succ_hash),
             req_succ_addr)
 
         return cls(rsn, info.sender, info.predecessor, info.successor)
@@ -242,7 +242,7 @@ class LookupRequest(message.BaseMessage):
     TYPE = message.MessageType.MSG_CH_LOOKUP
 
     def __init__(self, sender_hash, lookup_hash):
-        if any([not isinstance(x, fingertable.Hash) for x in (
+        if any([not isinstance(x, routing.Hash) for x in (
             sender_hash, lookup_hash)
         ]):
             raise TypeError("Please provide a Hash object.")
@@ -276,7 +276,7 @@ class LookupResponse(message.BaseMessage):
 
     def __init__(self, sender_hash, lookup_hash, mapped_hash, mapped_address,
                  hops=1):
-        if any([not isinstance(x, fingertable.Hash) for x in (
+        if any([not isinstance(x, routing.Hash) for x in (
             sender_hash, lookup_hash, mapped_hash)
         ]):
             raise TypeError("Please provide a Hash object.")

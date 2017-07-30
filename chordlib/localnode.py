@@ -14,7 +14,7 @@ import time
 
 from chordlib import L
 from chordlib import utils as chutils
-from chordlib import fingertable
+from chordlib import routing
 
 from chordlib import commlib
 from chordlib import chordnode
@@ -83,7 +83,7 @@ class LocalNode(chordnode.ChordNode):
         # These are all of the known direct neighbors in the Chord ring.
         self.peers = []
 
-        super(LocalNode, self).__init__(fingertable.Hash(data),
+        super(LocalNode, self).__init__(routing.Hash(data),
             self.listener.getsockname())
 
         L.info("Created Chord peer with hash: %d", self.hash)
@@ -260,7 +260,7 @@ class LocalNode(chordnode.ChordNode):
             L.info("    Performing a remote lookup!")
 
             lookup_msg = chordpkt.LookupRequest.make_packet(self.hash,
-                fingertable.Hash(hashed=thumb.start))
+                routing.Hash(hashed=thumb.start))
 
             response_data = []
             def callback(*args):
@@ -416,7 +416,7 @@ class LocalNode(chordnode.ChordNode):
 
         # Is this node closer to us than our existing predecessor?
         if self.predecessor is None or \
-           fingertable.Interval(self.predecessor.hash, self.hash).within(p.hash):
+           routing.Interval(self.predecessor.hash, self.hash).within(p.hash):
             L.info("Setting joinee as our predecessor!")
             self.predecessor = p
 
@@ -504,7 +504,7 @@ class LocalNode(chordnode.ChordNode):
         L.debug("notify::sock: %s->%s", sock.getpeername(), sock.getsockname())
         L.debug("notify::msg:  %s", msg)
 
-        if self.predecessor is None or fingertable.Interval(
+        if self.predecessor is None or routing.Interval(
             self.predecessor.hash, self.hash).within(node.hash):
 
             L.info("Another peer is a better predecessor:")
@@ -566,7 +566,7 @@ class LocalNode(chordnode.ChordNode):
             L.info("    Performing a remote lookup!")
 
             lookup_msg = chordpkt.LookupRequest.make_packet(self.hash,
-                fingertable.Hash(hashed=h))
+                routing.Hash(hashed=h))
 
             response_data = []
             def callback(*args):

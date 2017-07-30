@@ -8,7 +8,7 @@ import time
 
 from chordlib import L
 from chordlib import commlib
-from chordlib import fingertable
+from chordlib import routing
 from chordlib import utils as chutils
 
 
@@ -49,7 +49,7 @@ class ChordNode(object):
         self.predecessor = None
         self.chord_addr = (socket.gethostbyname(listener_addr[0]),
                            listener_addr[1])
-        self.fingers = fingertable.FingerTable(self)
+        self.fingers = routing.RoutingTable(self)
 
     def add_node(self, node):
         """ Adds a node to the internal finger table.
