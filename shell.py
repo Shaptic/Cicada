@@ -147,11 +147,9 @@ def on_lookup(node, address):
     if not root: return
 
     print "Lookup up %s:%d..." % address
-    try:
-        msg = chordpkt.LookupRequest.make_packet(
-            root.hash, fng.Hash(hashed=fng.chord_hash("%s:%d" % address)))
-
-        # root.
+    msg = chordpkt.LookupRequest.make_packet(
+        root.hash, fng.Hash(hashed=fng.chord_hash("%s:%d" % address)))
+    # root.
 
     return True
 

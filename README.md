@@ -9,14 +9,12 @@ Features:
   - Safe & secure encryption among trusted peers
 
 ## Running ##
-The `cicada` protocol has no external dependencies, just Python 2.7. Clone the
+The _Cicada_ protocol has no external dependencies, just Python 2.7. Clone the
 repository and start running a swarm:
 
-    $ git clone https://github.com/shaptic/cicada.git
-    $ cd cicada
-    $ tail -f cicada.log
-    $ python2 run.py localhost:10000 &
-    $ python2 run.py localhost:10001 --join localhost:10000
+    $ touch cicada.log; tail -f cicada.log
+    $ ./cicada localhost:10000 &
+    $ ./cicada localhost:10001 --join localhost:10000
 
 You can also use the interactive shell to manage more complex swarms:
 
@@ -37,7 +35,7 @@ You can also use the interactive shell to manage more complex swarms:
     >>> show
 
 ### Using Cicada in Your Application ###
-`cicada` in itself isn't an application in the sense that it doesn't really
+_Cicada_ in itself isn't an application in the sense that it doesn't really
 _do_ anything. Of course, there are examples included for you to toy with to
 see it in action (see `examples/`), but at its core it's merely a protocol for
 you to take advantage of for your application.
@@ -54,7 +52,7 @@ The only way to _ensure_ secure communications that are immune to
 Man-in-the-Middle attacks and packet sniffing is to establish a trusted set of
 encryption keys before using the network. This can be via secure email, and
 encrypted telephone call, exchanging symmetric keys in person, etc. Once these
-keys are exchanged, `cicada` can use them directly to encrypt all outgoing
+keys are exchanged, _Cicada_ can use them directly to encrypt all outgoing
 communication to a particular node.
 
 If you trust the network (or at least the majority of it -- see the [Attacker
@@ -86,7 +84,7 @@ simultaneously. This increases overall load on the network, naturally, but is a
 small price to pay in ensuring that your data isn't messed with in-transit.
 
 To use this feature, just pass `--duplicate [number of duplicate paths]` to the
-Cicada command-line, or pass the keyword argument `duplicates` to the
+_Cicada_ command-line, or pass the keyword argument `duplicates` to the
 `CicadaNode` API object.
 
     $ cicada localhost:10000 --join 10.0.0.1:50000 --duplicate 3
