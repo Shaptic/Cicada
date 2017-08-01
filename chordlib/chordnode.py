@@ -55,7 +55,7 @@ class ChordNode(object):
 
     def __repr__(self): return str(self)
     def __str__(self):  return "<ChordNode | hash=%d,%s:%d>" % (
-                               self.hash, self.chord_addr)
+                            self.hash, self.chord_addr[0], self.chord_addr[1])
 
 
 def walk_ring(root, max_count=10, on_node=lambda x: None):

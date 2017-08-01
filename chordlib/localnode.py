@@ -179,7 +179,7 @@ class LocalNode(chordnode.ChordNode):
                0 if not response.predecessor else response.predecessor.hash,
                "n/a" if not response.predecessor else (
                     "%s:%d" % response.predecessor.chord_addr))
-        L.info("    Our new    def on_join_response(self, sock, msg): successor hash: %d on %s:%d",
+        L.info("    Our new successor hash: %d on %s:%d",
                response.req_succ_hash, *response.req_succ_addr)
 
         # It's possible that the node we used to join the network is also our
@@ -235,7 +235,7 @@ class LocalNode(chordnode.ChordNode):
         L.info("Peer (%s:%d) requested info about us.", *sock.getpeername())
         L.info("Our details:")
         L.info("    Hash: %d", self.hash)
-        L.info("    Predecessor: %s", repr(pred))
+        L.info("    Predecessor: %s", pred)
         L.info("    Successor: %s", succ)
 
         self.processor.response(sock, response)
@@ -252,11 +252,11 @@ class LocalNode(chordnode.ChordNode):
         if self.successor.hash == response.sender.hash:
             node = self.successor
 
-        elif self.predecessor.hash == response.sender.hash:
+        elif self.predecessor and self.predecessor.hash == response.sender.hash:
             node = self.predecessor
 
         else:
-            node = remotenode.RemoteNode(response.sender, response.listener,
+            node = remotenode.RemoteNode(response.sender, response.chord_addr,
                                          existing_socket=sock)
 
         L.info("Received info from a peer: %d", response.sender.hash)
