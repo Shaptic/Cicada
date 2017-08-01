@@ -44,16 +44,18 @@ class ChordNode(object):
         """
         super(ChordNode, self).__init__()
 
-        self._hash = node_hash
+        self.hash = node_hash
         self.chord_addr = (socket.gethostbyname(listener_addr[0]),
                            listener_addr[1])
         self.predecessor = None
         self.successor = None
 
-    @property
-    def hash(self):     return self._hash
+        L.info("Created Chord peer with hash %d on %s:%d.",
+               self.hash, self.chord_addr[0], self.chord_addr[1])
+
     def __repr__(self): return str(self)
-    def __str__(self):  return "<ChordNode | %s:%d>" % self.chord_addr
+    def __str__(self):  return "<ChordNode | hash=%d,%s:%d>" % (
+                               self.hash, self.chord_addr)
 
 
 def walk_ring(root, max_count=10, on_node=lambda x: None):

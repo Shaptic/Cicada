@@ -14,7 +14,8 @@ def hexdump(data, chars=16, indent=0):
 
     # Converts a string into printables
     def to_string(line):
-        return ''.join(c if ord(c) >= 32 and ord(c) < 127 else '.' for c in line)
+        return ''.join(c if ord(c) >= 32 and ord(c) < 127 else '.' \
+                         for c in line)
 
     for i in xrange(0, len(data), chars):
         row = data[i : i + chars]
@@ -109,16 +110,3 @@ def dump_packet(data, fmt):
 
     if len(data) > offset:
         hexdump(data[offset:])
-
-if __name__ == '__main__':
-    raw_header = [
-        ("2s", "id"),
-        ("2s", "version"),
-        ("H",  "type"),
-        ("7s", "padding")
-    ]
-
-    header = ProtocolSpecifier(raw_header)
-    val = struct.pack('!' + header.format, "gk", "10", 0xaaaa,
-                      '\x00\x20\xff\x42\x70\x25\x00')
-    dump_packet(val, header)

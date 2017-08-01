@@ -6,18 +6,17 @@ import random
 import time
 import sys
 
-import chordlib.utils   as     chutils
-from   chordlib         import L
-from   packetlib        import message
+import chordlib.utils as chutils
+from   chordlib  import L
+from   packetlib import message
 
 
 class ThreadsafeSocket(object):
-    """ Provides a thread-safe interface into sockets.
-
-    Additionally, it performs logging on send/receive operations.
+    """ Provides a thread-safe (and logged) interface into sockets.
     """
 
     def __init__(self, existing_socket=None):
+        self.sendlock = threading.Lock()
         self.socket = existing_socket
         if not self.socket:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -30,14 +29,16 @@ class ThreadsafeSocket(object):
         raise NotImplemented("Use sendall()!")
 
     def sendall(self, bytestream):
-        with threading.Lock() as lock:
+        with self.sendlock:
             self.socket.sendall(bytestream)
-            L.debug("Sent %d bytes %s ... ", len(bytestream), repr(bytestream))
+            L.debug("Sent %d bytes %s", len(bytestream), repr(bytestream))
 
     def recv(self, amt):
         L.debug("Waiting on %d bytes ... ", amt)
         data = self.socket.recv(amt)
-        L.debug("Received %d bytes: %s", len(data), repr(data))
+        L.debug("Received %d bytes from %s:%d: %s", len(data),
+                self.socket.getpeername()[0], self.socket.getpeername()[1],
+                repr(data))
         return data
 
     def __getattr__(self, attr):
@@ -72,24 +73,26 @@ class ReadQueue(object):
         before this one is processed, if reads are done asynchronously from
         the queueing.
         """
-        try:
-            self.queue_lock.acquire()
-            self.pending += data
-            index = self.pending.find(self.BUFFER_END_BYTES)
-            if index == -1: return
+        with self.queue_lock:
+            try:
+                self.pending += data
+                index = self.pending.find(self.BUFFER_END_BYTES)
+                if index == -1: return
 
-            relevant = self.pending[:index + len(self.BUFFER_END_BYTES)]
-            pkt = message.MessageContainer.unpack(relevant)
-            self.pending = self.pending.replace(relevant, "", 1)
-            self.queue.append(pkt)
+                index += len(self.BUFFER_END_BYTES)
+                relevant = self.pending[:index]
+                pkt = message.MessageContainer.unpack(relevant)
+                self.pending = self.pending[index:]
+                if self.pending:
+                    L.debug("Remainder: %s", repr(self.pending))
+                self.queue.append(pkt)
 
-        except message.UnpackException, e:
-            L.warning("Failed to parse inbound message: %s", repr(self.pending))
-            message.MessageContainer.debug_packet(self.pending)
-            raise
-
-        finally:
-            self.queue_lock.release()
+            except message.UnpackException, e:
+                import packetlib.debug
+                L.warning("Failed to parse inbound message: %s",
+                          repr(self.pending))
+                packetlib.debug.hexdump(self.pending)
+                raise
 
     @property
     def ready(self):
@@ -98,11 +101,8 @@ class ReadQueue(object):
 
     def pop(self):
         """ Removes the oldest packet from the queue. """
-        self.queue_lock.acquire()
-        r = self.queue.pop(0)
-        self.queue_lock.release()
-        return r
-
+        with self.queue_lock:
+            return self.queue.pop(0)
 
 class InfiniteThread(threading.Thread):
     """ An abstract thread to run a method forever until its stopped.
@@ -375,9 +375,6 @@ class SocketProcessor(InfiniteThread):
                 self.sockets.pop(sock)
                 self.on_error(sock, graceful=False)
                 continue
-
-            L.debug("Received raw message from %s: %s",
-                repr(sock.getpeername()), repr(data))
 
             stream = self.sockets[sock]
             stream.queue.read(data)

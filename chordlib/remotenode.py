@@ -66,7 +66,7 @@ class RemoteNode(chordnode.ChordNode):
         """
         if not isinstance(listener_addr, tuple):
             raise TypeError("Must join ring via address pair, got %s!" % (
-                listener_addr))
+                            listener_addr))
 
         if existing_socket is not None:
             s = existing_socket

@@ -5,41 +5,24 @@ machine. At this point, you can either join an existing ring (by using the
 `LocalNode.join_ring` method), or simply by waiting for a node to join this
 ring.
 """
-
+import collections
 import threading
 import socket
 import select
 import random
 import time
 
-from chordlib import L
+from chordlib import L  # the logfile
 from chordlib import utils as chutils
 from chordlib import routing
-
 from chordlib import commlib
 from chordlib import chordnode
 from chordlib import remotenode
 
 import packetlib
+import packetlib.debug
 from   packetlib import chord as chordpkt
 from   packetlib import utils as pktutils
-
-
-def prevent_nonpeers(fn):
-    """ Prevent receiving messages from peers we don't know about.
-
-    This adds an additional parameter to the method -- the node itself that was
-    found. More often than not, we don't care about the raw socket, so this is
-    more useful.
-    """
-    def wrapper(self, sock, *args, **kwargs):
-        node = self._peerlist_contains(sock)
-        if node is None:
-            L.warning("This message is from an unknown peer.")
-            L.warning("    Socket: %s:%d", *sock.getpeername())
-            return False
-        return fn(self, sock, node, *args, **kwargs)
-    return wrapper
 
 
 class LocalNode(chordnode.ChordNode):
@@ -77,53 +60,233 @@ class LocalNode(chordnode.ChordNode):
         self.processor = commlib.SocketProcessor(self.on_error)
         self.processor.start()
 
-        super(LocalNode, self).__init__(routing.Hash(data),
-            self.listener.getsockname())
-
-        L.info("Created Chord peer with hash: %d", self.hash)
+        super(LocalNode, self).__init__(routing.Hash(value=data),
+                                        self.listener.getsockname())
         self.data = data
 
         # This thread periodically performs the stabilization algorithm.
         self.stable = chordnode.Stabilizer(self)
-        self.stable.start()
 
-        L.debug("starting stabilizer")
-
-    def join_ring(self, remote_address, timeout=10):
+    def join_ring(self, remote, timeout=10):
         """ Joins a Chord ring through a node at the specified address.
 
         We use the stabilization technique outlined in the Chord paper, which
         means that a JOIN only involves asking our entry point for our immediate
         successor.
 
-        :remote_address     the address referring to a node in a Chord ring.
-        :timeout[=30]       the number of seconds to wait for a response.
+        This operation blocks until the response is received or the timeout is
+        reached.
+
+        :remote         the address referring to a node in a Chord ring.
+        :timeout[=30]   the number of seconds to wait for a response.
+        :returns        a 2-tuple of the request and the response (or `False`)
         """
-        remote_address = (socket.gethostbyname(remote_address[0]),
-                          remote_address[1])
-
-        L.debug("join_ring::self: %s", str(self))
-        L.debug("join_ring::addr: %s", str(remote_address))
-
-        assert self.predecessor is None,      "join_ring: predecessor set!"
+        remote = (socket.gethostbyname(remote[0]), remote[1])
+        assert self.predecessor is None, "join_ring: predecessor set!"
 
         #
         # Create a Peer object that represents the external node that is letting
         # us into the ring. We send a JOIN request to the address, expecting a
         # response indicating our would-be successor.
         #
-        # We validate this by establishing a connection to the successor and
-        # adding it to our peer list.
+        # We validate this by establishing a connection to the successor.
         #
+        remote_str = "%s:%d" % remote
+        L.info("Joining peer ring via %s.", remote_str)
+        self.successor = remotenode.RemoteNode(routing.Hash(value=remote_str),
+                                               remote)
+        self.processor.add_socket(self.successor.peer_sock, self.process)
 
-        L.info("Joining peer ring via %s:%d.", *remote_address)
-        joiner_peer = self.add_peer(remote_address)
-        join_msg = chordpkt.JoinRequest.make_packet(self.hash, self.chord_addr)
-        if not self.processor.request(joiner_peer.peer_sock, join_msg,
-                                      self.on_join_response, timeout):
+        request  = chordpkt.JoinRequest.make_packet(self.hash, self.chord_addr)
+        response = self.processor.request(self.successor.peer_sock, request,
+                                          self.on_join_response, timeout)
+
+        # Temporary until we have a proper higher layer.
+        if not response:
             raise ValueError("JOIN request didn't get a response in time.")
 
-        return join_msg
+        self.stable.start()
+        return request, response
+
+    def on_join_request(self, sock, msg):
+        """ Receives a JOIN request from a node previously outside the ring.
+
+        Our response is a JOIN containing the would-be successor information of
+        the incoming peer. If we're the only ones in the ring, we return our own
+        address details and hope they figure out that they're already connected
+        to us.
+        """
+        L.info("Peer (%s:%d) requested to join the network.",
+               *sock.getpeername())
+
+        req = chordpkt.JoinRequest.unpack(msg.data)
+        remote = remotenode.RemoteNode(req.sender, req.listener, sock)
+
+        # This prevents a loop of connections in a small ring.
+        if self.successor is None:
+            self.successor = remote
+            lookup_successor = self
+
+        # Look up the successor locally. The successor of the requestor peer
+        # belongs in the range (peer.hash, successor.hash].
+        #
+        # TODO: Look up the successor over the network.
+        else:
+            ndist = collections.namedtuple("NodeDist", "node dist")
+            cmps = [ndist(self, 0), ndist(self.successor, 0)]
+            if self.predecessor: cmps.append(ndist(self.successor, 0))
+
+            for idx, i in enumerate(cmps):
+                cmps[idx] = i._replace(dist=routing.moddist(int(req.sender),
+                                                            int(i.node.hash),
+                                                            routing.HASHMOD))
+
+            lookup_successor = min(cmps, key=lambda x: x.dist).node
+            L.critical("Successor needs to be looked up in the network.")
+
+        L.info("Allowing connection and responding with our details:")
+        L.info("    Our hash: %d", self.hash)
+        L.info("    Our successor hash: %d on %s:%d", self.successor.hash,
+               *self.successor.chord_addr)
+        L.info("    Our predecessor hash: %d on %s",
+               0 if not self.predecessor else self.predecessor.hash,
+               "n/a" if not self.predecessor else (
+                    "%s:%d" % self.predecessor.chord_addr))
+        L.info("    Requestee successor hash: %d on %s:%d",
+               lookup_successor.hash, *lookup_successor.chord_addr)
+
+        response = chordpkt.JoinResponse.make_packet(lookup_successor, self,
+                                                     self.predecessor,
+                                                     self.successor,
+                                                     original=msg)
+
+        if not self.stable.is_alive():
+            self.stable.start()
+
+        self.processor.response(sock, response)
+        return response
+
+    def on_join_response(self, sock, msg):
+        """ Processes a JOIN response and creates the successor connection.
+        """
+        response = chordpkt.JoinResponse.unpack(msg.data)
+
+        L.info("We have been permitted to join the network:")
+        L.info("    From peer with hash: %d", response.sender.hash)
+        L.info("    Sender successor hash: %d on %s:%d",
+               response.successor.hash, *response.successor.chord_addr)
+        L.info("    Sender predecessor hash: %d on %s",
+               0 if not response.predecessor else response.predecessor.hash,
+               "n/a" if not response.predecessor else (
+                    "%s:%d" % response.predecessor.chord_addr))
+        L.info("    Our new    def on_join_response(self, sock, msg): successor hash: %d on %s:%d",
+               response.req_succ_hash, *response.req_succ_addr)
+
+        # It's possible that the node we used to join the network is also our
+        # successor (by chance or if they're alone in the network). In this
+        # case, we don't need to do anything.
+        if self.successor.chord_addr == response.sender.chord_addr:
+            L.info("    Our entry peer is actually our successor, too!")
+
+            # We set an invalid hash when we added the peer, so now we need to
+            # update it to be accurate.
+            self.successor.hash = response.request_successor.hash
+            return True
+
+        else:
+            self.successor.peer_sock.close()
+            L.info("    Connecting to our provided successor.")
+            self.successor = remotenode.RemoteNode(response.req_succ_hash,
+                                                   response.req_succ_addr)
+
+        return True
+
+    def on_notify_request(self, sock, msg):
+        """ Determine whether or not a node should be our predecessor.
+        """
+        request = chordpkt.NotifyRequest.unpack(msg.data)
+        node = request.sender
+
+        if self.predecessor is None or \
+           routing.Interval(int(self.predecessor.hash),
+                            int(self.hash)).within_open(node.hash):
+            L.info("Another peer is a better predecessor:")
+            L.info("    Node hash: %d", node.hash)
+            self.predecessor = node
+
+        response = chordpkt.NotifyResponse.make_packet(original=msg)
+        self.processor.response(sock, response)
+        return response
+
+    def on_info_request(self, sock, msg):
+        """ Processes an INFO message and responds with our ring details.
+        """
+        if self.predecessor is None and self.successor is None:
+            L.warning("FIXME: Received a request for information, but we aren't"
+                      " done processing our join request yet!")
+            return
+
+        pred = self.predecessor or self.successor
+        succ = self.successor   or pred
+
+        response = chordpkt.InfoResponse.make_packet(self, pred, succ,
+                                                     original=msg)
+
+        L.info("Peer (%s:%d) requested info about us.", *sock.getpeername())
+        L.info("Our details:")
+        L.info("    Hash: %d", self.hash)
+        L.info("    Predecessor: %s", repr(pred))
+        L.info("    Successor: %s", succ)
+
+        self.processor.response(sock, response)
+        return True
+
+    def on_info_response(self, sock, msg):
+        """ Processes a peer's information from an INFO response.
+        """
+        response = chordpkt.InfoResponse.unpack(msg.data)
+        if self.successor.peer_sock   != sock and \
+           self.predecessor.peer_sock != sock:
+            L.warning("Unknown socket source? %s:%d" % sock.getpeername())
+
+        if self.successor.hash == response.sender.hash:
+            node = self.successor
+
+        elif self.predecessor.hash == response.sender.hash:
+            node = self.predecessor
+
+        else:
+            node = remotenode.RemoteNode(response.sender, response.listener,
+                                         existing_socket=sock)
+
+        L.info("Received info from a peer: %d", response.sender.hash)
+        L.info("    Successor hash: %d on %s:%d", response.successor.hash,
+               *response.successor.chord_addr)
+        L.info("    Predecessor hash: %d on %s:%d", response.predecessor.hash,
+               *response.predecessor.chord_addr)
+
+        node.predecessor = response.predecessor
+        node.successor = response.successor
+        return node
+
+    def on_error(self, closed_sock, graceful):
+        """ Removes a peer from internal structures.
+        """
+        L.warning("Neighbor went down %sgracefully", "" if graceful else "un")
+        L.critical("Not fully implemented.")
+
+        if self.successor and self.successor.peer_sock == closed_sock:
+            self.successor = None
+
+        if self.predecessor and self.predecessor.peer_sock == closed_sock:
+            self.predecessor = None
+
+    def on_new_peer(self, address, sock):
+        """ Adds a newly connected peer to the internal socket processor.
+        """
+        L.debug("New peer from %s:%d (on %s:%d)", address[0], address[1],
+                *sock.getpeername())
+        self.processor.add_socket(sock, self.process)
 
     def stabilize(self):
         """ Runs the stabilization algorithm.
@@ -133,57 +296,51 @@ class LocalNode(chordnode.ChordNode):
         instead." Then, we tell n's successor about n. That way, the successor
         can learn about n if it didn't already know in the first place.
         """
-        if self.successor is None:  # nothing to stabilize, yet
+        if self.successor is None:  # nothing to stabilize yet
             return
 
-        # If we haven't attempted to query the predecessor yet, do so.
-        #
-        # If that fails, the successor may not *have* a predecessor, in which
-        # case we should tell them about us, at least! That way, the ring is
-        # linked.
+        # Query the successor for information.
         if self.successor.predecessor is None:
             L.info("Asking our successor for neighbor info...")
-            info_msg = chordpkt.InfoRequest.make_packet()
-            info_rsp = self.processor.request(self.successor.peer_sock,
-                info_msg, self.on_info_response, wait_time=5)
-
-            if not info_rsp:
+            request = chordpkt.InfoRequest.make_packet()
+            response = self.processor.request(self.successor.peer_sock,
+                                              request, self.on_info_response,
+                                              wait_time=5)
+            if not response:
                 L.error("on_info_response failed.")
                 return
 
-            if self.successor.predecessor is None:
-                self.successor.predecessor = self
-
-        x = self.successor.predecessor
+        # It's possible that the successor hasn't stabilized yet, and thus
+        # also doesn't have a predecessor node.
+        x = self.successor.predecessor or self
 
         # We HAVE to use an open-ended range check, because if our successor's
         # predecessor is us (as it would be in the normal case), we'd be setting
         # us as our own successor!
-
+        if routing.Interval(int(self.hash),
+                            int(self.successor.hash)).within_open(int(x.hash)):
             L.info("Our successor's predecessor is closer to us than our ")
             L.info("current successor!")
             L.info("    Specifically, successor.predecessor: %d", x.hash)
             L.info("    Whereas self.successor: %d", x.hash)
             L.info("    And self.range: [%d, %d)",
-                   self.fingers.local.start, self.fingers.local.end)
+                   int(self.hash), int(self.successor.hash))
 
-            L.critical("Entering a NotImplemented code path!")
-            # self.fingers.set_successor(x)
+            # self.successor.peer_sock.close()
+            self.successor = self.successor.predecessor
+            self.successor = remotenode.RemoteNode(self.successor.hash,
+                                                   self.successor.chord_addr)
+            self.processor.add_socket(self.successor.chord_addr, self.process)
 
-        if x.hash == self.hash:
-            L.debug("Nothing to notify -- we are successor.predecessor")
-            return
-
-        # We need to now notify our new successor about ourselves, so that they
-        # can adjust their tables accordingly as well.
-        notif_msg = chordpkt.NotifyRequest.make_packet()
-
+        # We need to notify our successor about ourselves (regardless of whether
+        # we adjusted or not), so they can set their predecessor appropriately.
         L.info("Notifying our neighbor (%s:%d) about us.",
                *self.successor.chord_addr)
 
-        # We don't care about the response, so just fire away.
-        self.processor.request(self.successor.peer_sock, notif_msg,
-            lambda *args: True, wait_time=0)
+        request = chordpkt.NotifyRequest.make_packet(self, self.predecessor,
+                                                     self.successor)
+        self.processor.request(self.successor.peer_sock, request,
+                               lambda *args: True, wait_time=0) # fire & forget
 
     def process(self, peer_socket, msg):
         L.debug("Received message %s from %s:%d", repr(msg),
@@ -193,7 +350,7 @@ class LocalNode(chordnode.ChordNode):
             packetlib.MessageType.MSG_CH_JOIN:      self.on_join_request,
             packetlib.MessageType.MSG_CH_INFO:      self.on_info_request,
             packetlib.MessageType.MSG_CH_NOTIFY:    self.on_notify_request,
-            packetlib.MessageType.MSG_CH_LOOKUP:    self.on_lookup_request,
+            # packetlib.MessageType.MSG_CH_LOOKUP:    self.on_lookup_request,
         }
 
         for msg_type, func in handlers.iteritems():
@@ -203,247 +360,6 @@ class LocalNode(chordnode.ChordNode):
         else:
             raise ValueError("Message received (type=%s) without handler." % (
                 message.MessageType.LOOKUP[msg.type]))
-
-    def on_new_peer(self, client_address, client_socket):
-        """ Creates a new Peer from a socket that just joined this ring.
-        """
-        self.processor.add_socket(client_socket, self.process)
-
-    def on_info_request(self, sock, msg):
-        """ Processes an INFO message and responds with our ring details.
-        """
-
-        #
-        # TODO: Race condition between JOIN response and INFO request? Consider:
-        #   - A joins B, sending JOIN request.
-        #   - B responds, sending JOIN-RESP.
-        #   - B calls stabilization, sending INFO.
-        #   - A hasn't processed the JOIN-RESP yet.
-        #   - A receives INFO, this assertion is triggered.
-        #
-        if self.predecessor is None and self.successor is None:
-            L.warning("Received a request for information, but we aren't done "
-                      "processing our join request yet!")
-            return
-
-        pred = self.predecessor or self.successor
-        succ = self.successor   or pred
-
-        infor_msg = chordpkt.InfoResponse.make_packet(
-            self.hash, pred, succ, original=msg)
-
-        L.info("Peer (%s:%d) requested info about us, replying...",
-               *sock.getpeername())
-        L.info("Our details:")
-        L.info("    Hash: %d", self.hash)
-        L.info("    Predecessor: %s", pred)
-        L.info("    Successor: %s", succ)
-
-        self.processor.response(sock, infor_msg)
-        return True
-
-    @prevent_nonpeers
-    def on_info_response(self, sock, node, msg):
-        """ Processes a peer's information from an INFO response.
-        """
-        L.debug("on_info_response::sock: %s", sock.getsockname())
-        L.debug("on_info_response::msg:  %s", msg)
-
-        info_resp = chordpkt.InfoResponse.unpack(msg.data)
-
-        L.info("Received info from a peer: %d", info_resp.sender)
-        L.info("    Successor hash: %d on %s:%d", info_resp.succ_hash,
-               *info_resp.succ_addr)
-        L.info("    Predecessor hash: %d on %s:%d", info_resp.pred_hash,
-               *info_resp.pred_addr)
-
-        assert node.hash == info_resp.sender, "Hashes don't match!"
-
-        if node.successor is not None:
-            L.info("Removing old successor from node %d!", node.successor.hash)
-            node.fingers.remove(node.successor)
-
-        node.fingers.insert(info_resp.successor)
-        node.fingers.insert(info_resp.predecessor)
-
-        return info_resp
-
-    def on_join_request(self, sock, msg):
-        """ Receives a JOIN request from a node previously outside the ring.
-
-        Chord specifies that this occurs when a new node joins the ring and
-        chooses us as its successor. Thus, we use this node to (potentially)
-        establish our predecessor.
-
-        If it's our first node, though, it also gets added to the finger table!
-
-        The response is an RJOIN containing the would-be successor information
-        of the incoming Peer. If we're the only ones in the ring, we return
-        "NONE" and let them use our remote address.
-        """
-
-        L.debug("on_join_request::self: %s", str(self))
-        L.debug("on_join_request::sock: %s", str(sock))
-        L.debug("on_join_request::msg:  %s", repr(msg))
-        L.info("Peer (%s:%d) requested to join the network.", *sock.getpeername())
-
-        req = chordpkt.JoinRequest.unpack(msg.data)
-
-        # Always add node, because it could be better than some existing ones.
-        p = self.add_peer(req.listener, peer_socket=sock, peer_hash=req.sender)
-        self.add_node(p)
-
-        # Is this node closer to us than our existing predecessor?
-        if self.predecessor is None or \
-           routing.Interval(self.predecessor.hash, self.hash).within(p.hash):
-            L.info("Setting joinee as our predecessor!")
-            self.predecessor = p
-
-        #
-        # If our successor doesn't exist, or matches the address of the
-        # requestee (that is, it's just us and them), we need to make sure that
-        # we tell them that _we_ are their successor instead of telling them our
-        # actual successor.
-        #
-        # This prevents a loop of connections in a small ring.
-        #
-        if not self.successor or self.successor.chord_addr == req.listener:
-            response_object = self
-        else:
-            response_object = self.successor
-
-        L.info("Allowing connection and responding with our details:")
-        L.info("    Our hash: %d", self.hash)
-        L.info("    Our successor hash: %d on %s:%d", self.successor.hash,
-               *self.successor.chord_addr)
-        L.info("    Our predecessor hash: %d on %s:%d", self.predecessor.hash,
-               *self.predecessor.chord_addr)
-        L.info("    Requestee successor hash: %d on %s:%d",
-               response_object.hash, *response_object.chord_addr)
-
-        response = chordpkt.JoinResponse.make_packet(response_object,
-            self.hash, self.predecessor, self.successor, original=msg)
-
-        self.processor.response(sock, response)
-        return True
-
-    def on_join_response(self, sock, msg):
-        """ Executed when an JOIN _response_ is received.
-        """
-        L.debug("join_response::self: %s", self)
-        L.debug("join_response::sock: %s", sock)
-        L.debug("join_response::msg:  %s", msg)
-
-        joinr_msg = chordpkt.JoinResponse.unpack(msg.data)
-
-        L.info("We have been permitted to join the network:")
-        L.info("    From peer with hash: %d", joinr_msg.sender)
-        L.info("    Sender successor hash: %d on %s:%d",
-               joinr_msg.succ_hash, *joinr_msg.succ_addr)
-        L.info("    Sender predecessor hash: %d on %s:%d",
-               joinr_msg.pred_hash, *joinr_msg.pred_addr)
-        L.info("    Our new predecessor hash: %d on %s:%d",
-               joinr_msg.req_succ_hash, *joinr_msg.req_succ_addr)
-
-        result = self._peerlist_contains(joinr_msg.req_succ_addr)
-        if result is not None:
-            L.info("    We already know about this peer.")
-            L.info("    This means they are the closest node to us!")
-
-            # We set an empty hash when we added the peer, so now we need to
-            # update it to be accurate.
-            result._hash = joinr_msg.request_successor.hash
-
-        elif joinr_msg.request_successor.hash == self.hash:
-            L.info("    Our neighbor indicated that WE are our successor.")
-            L.info("    That means he should be our true successor.")
-            result = self._peerlist_contains(sock)
-
-        else:
-            L.info("    Connecting to our provided successor.")
-            result = self.add_peer(
-                joinr_msg.request_successor.chord_addr,
-                peer_hash=joinr_msg.request_successor.hash)
-
-            conn = chordpkt.ConnectRequest.make_packet(self.hash,
-                self.predecessor, self.successor)
-            self.processor.request(result.peer_sock, conn, lambda *args: True)
-
-        self.add_node(result)
-
-        # Theoretically, this should be picked up during stabilization, but we
-        # can speed that up by setting it directly here.
-        self.predecessor = result
-
-        if self.successor != result:
-            L.critical("Somehow ended up with an invalid successor!")
-            raise ValueError("Invalid successor from JOIN response.")
-
-        return True
-
-    @prevent_nonpeers
-    def on_notify_request(self, sock, node, msg):
-        """ Determine whether or not a node should be our predecessor.
-        """
-        L.debug("notify::sock: %s->%s", sock.getpeername(), sock.getsockname())
-        L.debug("notify::msg:  %s", msg)
-
-        request = chordpkt.NotifyRequest.unpack(msg.data)
-
-        if self.predecessor is None or routing.Interval(
-            self.predecessor.hash, self.hash).within(node.hash):
-
-            L.info("Another peer is a better predecessor:")
-            L.info("    Node hash: %d", node.hash)
-
-            if node.predecessor is not None:
-                L.info("    Node predecessor hash: %d on %s:%d",
-                       node.predecessor.hash, *node.predecessor.chord_addr)
-            else:
-                L.warning("    Node has no predecessor!")
-
-            self.predecessor = node
-
-        if self.predecessor == self:
-            L.critical("We set ourselves as our own predecessor!")
-            import pdb; pdb.set_trace()
-            raise ValueError
-
-        notify_msg = chordpkt.NotifyResponse.make_packet(
-            self.hash, self.predecessor, self.successor, original=msg)
-
-        self.processor.response(sock, notify_msg)
-        return True
-
-    @prevent_nonpeers
-    def on_notify_response(self, sock, node, msg):
-        notif_msg = chordpkt.NotifyResponse.unpack(msg.data)
-
-        L.info("Received a notification from a peer: %d", notif_msg.sender)
-        L.info("    Successor hash: %d on %s:%d",
-               notif_msg.succ_hash, *notif_msg.listener)
-        L.info("    Predecessor hash: %d on %s:%d",
-               notif_msg.pred_hash, *notif_msg.pred_addr)
-
-        assert node.hash == notif_msg.node_hash, "Hashes don't match!"
-
-        node.fingers.remove(node.successor)
-        node.fingers.insert(notif_msg.successor)
-        node.predecessor = notif_msg.predecessor
-
-        return notif_msg
-
-    @prevent_nonpeers
-    def on_error(self, closed_sock, node, graceful):
-        """ Removes a peer from internal structures.
-
-        TODO: Notify neighbors that the node went down.
-        """
-        L.warning("Neighbor went down %sgracefully: %s",
-            "" if graceful else "un", node)
-
-        self.peers.remove(node)
-        self.fingers.remove(node)
 
     def _peerlist_contains(self, elem):
         if isinstance(elem, tuple):

@@ -114,7 +114,7 @@ class Hash(object):
             return str(self) == other
         elif isinstance(other, Hash):
             return int(self) == int(other)
-        raise TypeError("Hash.__eq__ called with invalid parameter.")
+        raise TypeError("expected int,str,Hash, got %s" % type(other))
 
     def __ne__(self, other):
         return not (self == other)

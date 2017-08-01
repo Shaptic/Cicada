@@ -226,7 +226,9 @@ class MessageContainer(object):
             total_len += cls.RESPONSE_LEN
 
             get2 = lambda i: MessageContainer.extract_chunk(
-                cls.RAW_FORMATS[MessageBlob.MSG_RESPONSE][i], packet, offset)
+                cls.RAW_FORMATS[MessageBlob.MSG_RESPONSE].raw_format[i],
+                packet, offset)
+
             seq, offset = get2(0)
             chk, offset = get2(1)
             resp = cls.FAKE_RESP(seq, chk)
@@ -394,10 +396,10 @@ class BaseMessage(object):
         if "original" in kwargs and not cls.RESPONSE or \
            cls.RESPONSE and "original" not in kwargs:
             raise ValueError("unexpected %soriginal kwarg in %sresponse "
-                " packet type=%d" % (
-                    "lack of " if "original" in kwargs else "",
+                "packet type %s" % (
+                    "lack of " if "original" not in kwargs else "",
                     "non-" if not cls.RESPONSE else "",
-                    cls.TYPE))
+                    MessageType.LOOKUP[cls.TYPE]))
 
         return MessageContainer(cls.TYPE, data=cls(*args).pack(), **kwargs)
 
