@@ -4,16 +4,18 @@
 import sys
 import md5
 import uuid
+import enum
 import struct
 import collections
 
 from packetlib.errors import ExceptionType
 
-from chordlib         import L
-from chordlib         import utils as chutils
+from packetlib import debug
+from chordlib  import L
+from chordlib  import utils as chutils
 
 
-class MessageBlob:
+class MessageBlob(enum.Enum):
     """ Describes a particular "chunk" in a message.
     """
     MSG_HEADER      = 0     # used in all messages
@@ -22,7 +24,7 @@ class MessageBlob:
     MSG_END         = 3     # suffix to indicate message termination
 
 
-class MessageType:
+class MessageType(object):
     """ Describes the various types of messages in the Cicada protocol.
     """
     MSG_CH_JOIN     = 0x0001
@@ -71,51 +73,41 @@ class MessageContainer(object):
 
     CHORD_PR  = "\x63\x68"      # ch
     CICADA_PR = "\x63\x69"      # ci
-    VERSION   = "\x00\x02"      # v0.2
+    VERSION   = 0x0002          # v0.2
     END       = "\x47\x4b\x04"  # GK[EoT]
 
     RAW_FORMATS = {
-        MessageBlob.MSG_HEADER: [
-            "2s",   # protocol identifier
-            "2s",   # version
-            "h",    # message type
-            "?",    # response indication
-            "I",    # sequence number
-            "16s",  # checksum
-            "I",    # payload length, P
-        ],
-        MessageBlob.MSG_RESPONSE: [
-            "I",    # sequence number of request
-            "16s",  # checksum of request
-        ],
-        MessageBlob.MSG_PAYLOAD: [
-            "%ds",  # P-byte payload string, specific to the message type
-        ],
-        MessageBlob.MSG_END: [
-            "B",    # byte-aligned padding length, Z
-            "%ds",  # Z padding bytes
-            "3s",   # end-of-message
-        ],
+        MessageBlob.MSG_HEADER: debug.ProtocolSpecifier([
+            ("2s",   "protocol identifier"),
+            ("h",    "version"),
+            ("h",    "message type"),
+            ("?",    "response indication"),
+            ("I",    "sequence number"),
+            ("16s",  "checksum"),
+            ("I",    "payload length, P"),
+        ]),
+        MessageBlob.MSG_RESPONSE: debug.ProtocolSpecifier([
+            ("I",    "sequence number of request"),
+            ("16s",  "checksum of request"),
+        ]),
+        MessageBlob.MSG_PAYLOAD: debug.ProtocolSpecifier([
+            ("%ds",  "P-byte payload string")
+        ]),
+        MessageBlob.MSG_END: debug.ProtocolSpecifier([
+            ("B",    "byte-aligned padding length, Z"),
+            ("%ds",  "Z padding bytes"),
+            ("3s",   "end-of-message"),
+        ]),
     }
     FORMATS  = {
-        MessageBlob.MSG_HEADER:   ''.join(RAW_FORMATS[MessageBlob.MSG_HEADER]),
-        MessageBlob.MSG_RESPONSE: ''.join(RAW_FORMATS[MessageBlob.MSG_RESPONSE]),
-        MessageBlob.MSG_PAYLOAD:  ''.join(RAW_FORMATS[MessageBlob.MSG_PAYLOAD]),
-        MessageBlob.MSG_END:      ''.join(RAW_FORMATS[MessageBlob.MSG_END]),
+        MessageBlob.MSG_HEADER:   RAW_FORMATS[MessageBlob.MSG_HEADER].format,
+        MessageBlob.MSG_RESPONSE: RAW_FORMATS[MessageBlob.MSG_RESPONSE].format,
+        MessageBlob.MSG_PAYLOAD:  RAW_FORMATS[MessageBlob.MSG_PAYLOAD].format,
+        MessageBlob.MSG_END:      RAW_FORMATS[MessageBlob.MSG_END].format,
     }
-    DEBUG = {
-        "B": "ubyte",
-        "H": "ushort",
-        "h": "short",
-        "Q": "ulong",
-        "I": "uint",
-        "i": "int",
-        "(\d+)s": "\\1-byte str",
-        "(\d+)b": "\\1-byte bts",
-    }
-    HEADER_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_HEADER])
+    HEADER_LEN   = struct.calcsize('!' + FORMATS[MessageBlob.MSG_HEADER])
     RESPONSE_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_RESPONSE])
-    SUFFIX_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END] % 0)
+    SUFFIX_LEN   = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END] % 0)
     MIN_MESSAGE_LEN = chutils.nextmul(HEADER_LEN + SUFFIX_LEN, 8)
 
     def __init__(self, msg_type, data="", sequence=0, original=None):
@@ -182,7 +174,7 @@ class MessageContainer(object):
             packet[ cls.HEADER_LEN : ]
         )
 
-        header_blob = cls.RAW_FORMATS[MessageBlob.MSG_HEADER]
+        header_blob = cls.RAW_FORMATS[MessageBlob.MSG_HEADER].raw_format
         offset = header_blob.index("16s")
         before = struct.calcsize('!' + ''.join(header_blob[:offset]))
         packet = header[:before] + checksum + \
@@ -203,7 +195,7 @@ class MessageContainer(object):
             raise UnpackException(ExceptionType.EXC_TOO_SHORT, len(packet))
 
         ## Validate the header.
-        header_fmt = cls.RAW_FORMATS[MessageBlob.MSG_HEADER]
+        header_fmt = cls.RAW_FORMATS[MessageBlob.MSG_HEADER].raw_format
         offset = 0
 
         get = lambda i: MessageContainer.extract_chunk(
@@ -268,57 +260,40 @@ class MessageContainer(object):
         L.debug("Checksum for %s: %s", cicada, repr(cicada.checksum))
         return cicada
 
-    @classmethod
-    def debug_packet(cls, data):
-        """ Inspects the format and dumps a readable packet representation.
-
-        We have a format, as a list of `struct` specifiers, as well as a debug
-        string lookup table. For each format, find the corresponding readable
-        equivalent.
+    def dump(self):
+        """ Attempts to dump the packet in a readable format.
         """
-        import re
+        from packetlib import debug as D
+        fmts = [self.RAW_FORMATS[MessageBlob.MSG_HEADER]]
+        if self.is_response: fmt.append(RAW_FORMATS[MessageBlob.MSG_RESPONSE])
 
-        # Stores a readable format string for each struct-format.
-        results = []
+        pay = D.ProtocolSpecifier(self.RAW_FORMATS[MessageBlob.MSG_PAYLOAD])
+        pay.raw_format[0] = pay.raw_format[0] % len(self.data)
+        fmts.append(pay)
 
-        # Join all of the lists of each sector into one big list.
-        all_items = sum(cls.RAW_FORMATS.values(), [])
+        padlen = self.length - self.raw_length
+        end = D.ProtocolSpecifier(self.RAW_FORMATS[MessageBlob.MSG_END])
+        end.raw_format[1] = end.raw_format[1] % padlen
+        fmts.append(end)
 
-        # Iterate over every struct-format in the packet.
-        for item in all_items:
+        chunks, desc = (sum([fmt.raw_format for fmt in fmts], []),
+                        sum([list(fmt.descriptions) for fmt in fmts], []))
+        D.dump_packet(self.pack(), D.ProtocolSpecifier(zip(chunks, desc)))
 
-            # Iterate over every (match, readable) in the outputter.
-            for fmt, readable in cls.DEBUG.iteritems():
+    @staticmethod
+    def full_format():
+        """ Calculates a simple format for trying to decipher a packet.
+        """
+        fmts = [
+            MessageContainer.RAW_FORMATS[MessageBlob.MSG_HEADER],
+            MessageContainer.RAW_FORMATS[MessageBlob.MSG_PAYLOAD],
+            MessageContainer.RAW_FORMATS[MessageBlob.MSG_END],
+        ]
+        chunks, desc = (sum([fmt.raw_format for fmt in fmts], []),
+                        sum([list(fmt.descriptions) for fmt in fmts], []))
 
-                # If the match matches, replace the \1 with the real length
-                # if necessary, then add it to the list.
-                m = re.match(fmt, item)
-                if m:   # matching format!
-                    result = readable
-                    if readable.find("\\1") != -1:  # replace with length
-                        result = readable.replace("\\1", m.groups(1)[0])
-                    results.append(result)
-                    break
-
-            # No matches, so treat it like an erroneous type.
-            else: results.append("errtype")
-
-        print repr(data)
-        offset = 0  # how far into the data are we?
-        maxlen = "%%%ds" % (max(len(x) for x in results) + 1)
-        for i, fmt in enumerate(results):
-            item = all_items[i]
-            filtered_fmt = item.replace("%d", "0")
-            chunk_size = struct.calcsize('!' + filtered_fmt)
-            chunk = data[offset : offset + chunk_size]
-            offset += chunk_size
-
-            try:
-                unpacked, = struct.unpack(filtered_fmt, chunk)
-            except struct.error:
-                unpacked = "err," + repr(chunk)
-
-            print "%s: %s %s" % (maxlen % fmt, repr(chunk), repr(unpacked))
+        import packetlib.debug as D
+        return D.ProtocolSpecifier(zip(chunks, desc))
 
     @property
     def raw_length(self):
@@ -352,9 +327,9 @@ class MessageContainer(object):
 
     @staticmethod
     def version_to_str(v):
-        """ Converts a 2-byte version blob into a readable string.
+        """ Converts a 2-byte version short into a readable string.
         """
-        return "%d.%d" % (ord(v[0]), ord(v[1]))
+        return "%d.%d" % (v & 0xFF00 >> 2, v & 0x00FF)
 
     def __repr__(self): return str(self)
     def __str__(self):
@@ -399,6 +374,7 @@ class BaseMessage(object):
     """
     __metaclass__ = FormatMetaclass
     RAW_FORMAT = []
+    RESPONSE = False
 
     def __init__(self, msg_type):
         self.type = msg_type
@@ -415,6 +391,14 @@ class BaseMessage(object):
 
     @classmethod
     def make_packet(cls, *args, **kwargs):
+        if "original" in kwargs and not cls.RESPONSE or \
+           cls.RESPONSE and "original" not in kwargs:
+            raise ValueError("unexpected %soriginal kwarg in %sresponse "
+                " packet type=%d" % (
+                    "lack of " if "original" in kwargs else "",
+                    "non-" if not cls.RESPONSE else "",
+                    cls.TYPE))
+
         return MessageContainer(cls.TYPE, data=cls(*args).pack(), **kwargs)
 
     @property

@@ -163,7 +163,8 @@ class InfoResponse(message.BaseMessage):
         PackedHash.EMBED_FORMAT,        # sender's successor hash
         PackedAddress.EMBED_FORMAT,     # ^ address
     ]
-    TYPE = message.MessageType.MSG_CH_INFOR
+    TYPE = message.MessageType.MSG_CH_INFO
+    RESPONSE = True
 
     def __init__(self, sender, pred, succ):
         """ Creates internal structures for the INFO message.
@@ -254,7 +255,8 @@ class JoinResponse(InfoResponse):
         PackedHash.EMBED_FORMAT,        # requestor's successor hash
         PackedAddress.EMBED_FORMAT,     # ^ address
     ]
-    TYPE = message.MessageType.MSG_CH_JOINR
+    TYPE = message.MessageType.MSG_CH_JOIN
+    RESPONSE = True
 
     def __init__(self, req_succ, *args):
         """ Prepares a respones to a JOIN request.
@@ -294,6 +296,7 @@ class JoinResponse(InfoResponse):
 
 class NotifyRequest(InfoResponse):
     TYPE = message.MessageType.MSG_CH_NOTIFY
+    RESPONSE = False
 
     def __init__(self, *args):
         super(NotifyRequest, self).__init__(*args)
@@ -301,7 +304,8 @@ class NotifyRequest(InfoResponse):
 
 class NotifyResponse(InfoResponse):
     RAW_FORMAT = InfoResponse.RAW_FORMAT
-    TYPE = message.MessageType.MSG_CH_NOTIFYR
+    TYPE = message.MessageType.MSG_CI_NOTIFY
+    RESPONSE = True
 
     def __init__(self, *args):
         super(NotifyResponse, self).__init__(*args)
@@ -345,7 +349,8 @@ class LookupResponse(message.BaseMessage):
         PackedAddress.EMBED_FORMAT, # resulting mapped node listener
         "H",    # number of hops it took
     ]
-    TYPE = message.MessageType.MSG_CH_LOOKUPR
+    TYPE = message.MessageType.MSG_CI_LOOKUP
+    RESPONSE = True
 
     def __init__(self, sender_hash, lookup_hash, mapped_hash, mapped_address,
                  hops=1):

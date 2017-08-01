@@ -25,11 +25,14 @@ def hexdump(data, chars=16, indent=0):
 
 class ProtocolSpecifier:
     def __init__(self, spec):
-        if spec and isinstance(spec[0], str):
+        if isinstance(spec, ProtocolSpecifier):
+            self.raw_format = list(spec.raw_format)
+            self.descriptions = tuple(spec.descriptions)
+        elif spec and isinstance(spec[0], str):
             self.raw_format = spec
             self.descriptions = tuple("" for x in spec)
         else:
-            self.raw_format = tuple(x[0] for x in spec)
+            self.raw_format = list(x[0] for x in spec)
             self.descriptions = tuple(x[1] for x in spec)
 
     @property
@@ -78,13 +81,20 @@ def dump_packet(data, fmt):
     # Now, build the output from the raw bytes.
     offset = 0  # how far into the data are we?
     for i, fmt_type in enumerate(results):
-        chunk_size = struct.calcsize('!' + fmt.raw_format[i])
+        if fmt.raw_format[i].find("%d") != -1:
+            tmp_format = fmt.raw_format[i] % 0
+        else:
+            tmp_format = fmt.raw_format[i]
+
+        chunk_size = struct.calcsize('!' + tmp_format)
         chunk = data[offset : offset + chunk_size]
         offset += chunk_size
+        if chunk_size <= 0 or not chunk:
+            break
 
         try:
-            unpacked, = struct.unpack('!' + fmt.raw_format[i], chunk)
-            if re.match("\d+s", fmt.raw_format[i]):
+            unpacked, = struct.unpack('!' + tmp_format, chunk)
+            if re.match("\d+s", tmp_format):
                 unpacked = ''.join([
                     b if ord(b) >= 32 and ord(b) < 128 else '.' \
                     for b in unpacked
@@ -94,7 +104,11 @@ def dump_packet(data, fmt):
 
         print "%s | %s -- %s %s" % (fmt.descriptions[i].ljust(desclen),
             fmt_type.ljust(typelen), repr(chunk),
-            "[ %s ]" % repr(unpacked) if unpacked != chunk else "")
+            ("[ %s ]" % repr(unpacked)) if unpacked != chunk and \
+                fmt_type.find("str") == -1 else "")
+
+    if len(data) > offset:
+        hexdump(data[offset:])
 
 if __name__ == '__main__':
     raw_header = [
