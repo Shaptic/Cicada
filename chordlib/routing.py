@@ -14,7 +14,8 @@ def chord_hash(data):
     return HASHFN(data).digest()
 
 
-BITCOUNT = len(chord_hash("0")) * 8
+HASHLEN = len(chord_hash("0"))
+BITCOUNT = HASHLEN * 8
 HASHMOD  = 2 ** BITCOUNT
 
 
@@ -206,9 +207,9 @@ class Route(Interval):
 
 
 class RoutingTable(object):
-    """ Establishes a finger table for a particular node.
+    """ Establishes a routing table for a particular node.
 
-    The finger table is a list that is rotated around the root node (that is,
+    The routing table is a list that is rotated around the root node (that is,
     the node this table is established for). On initialization, it's established
     to match the size of the bit-length of the hash.
 
@@ -216,7 +217,7 @@ class RoutingTable(object):
     """
 
     def __init__(self, node, bitcount=BITCOUNT):
-        """ Initializes the finger table with 2^i intervals around the root.
+        """ Initializes the routing table with 2^i intervals around the root.
         """
         self.modulus = 2 ** bitcount
         self.seen_nodes = set()
@@ -224,8 +225,8 @@ class RoutingTable(object):
         node_hash = int(node.hash)
         self.entries = [
             Route((node_hash + 2 ** i) % self.modulus,
-                   (node_hash + 2 ** (i + 1)) % self.modulus,
-                   None, self.modulus) \
+                  (node_hash + 2 ** (i + 1)) % self.modulus,
+                  None, self.modulus) \
             for i in xrange(bitcount)
         ]
 
@@ -233,7 +234,7 @@ class RoutingTable(object):
         self.local = Route(self.entries[-1].end, int(self.root.hash), self.root)
 
     def insert(self, node):
-        """ Adds a node to the finger table if it's better than any successors.
+        """ Adds a node to the table if it's better than any successors.
 
         TODO: Improve O(n) insertion.
         """
@@ -250,12 +251,11 @@ class RoutingTable(object):
                 f.node = node
 
     def remove(self, node):
-        """ Removes an existing node from the finger table.
+        """ Removes an existing node from the table.
 
-        If possible, the finger table entry will then point to the next
-        available node.
+        If possible, the route will then point to the next available node.
 
-        For example, removing <3> from the existing finger table: [
+        For example, removing <3> from the table: [
             [0, 3)  -> <3>,
             [3, 7)  -> <4>,
             [8, 15) -> <4>,
@@ -272,7 +272,7 @@ class RoutingTable(object):
         removed ones is the new successor node.
         """
         L.info("Discarding node from lookup table with hash=%d", node.hash)
-        L.debug("Removing node from finger table:")
+        L.debug("Removing node from routing table:")
         L.debug("\t%s", node)
 
         self.seen_nodes.discard(node)
@@ -285,7 +285,7 @@ class RoutingTable(object):
                 removed[i] = f
                 f.remove()
 
-        L.debug("Node finger table is now:")
+        L.debug("Node routing table is now:")
         for i in xrange(0, len(self) - 1, 2):
             L.debug("\t%s ; %s", self.finger(i), self.finger(i + 1))
 
@@ -304,7 +304,7 @@ class RoutingTable(object):
         """ Finds the predecessor node for a particular value.
         """
         start = self.root
-        if start.successor is None:     # no fingers yet
+        if start.successor is None:     # no routes yet
             return start
 
         tmp_entry = Interval(int(start.hash), int(start.successor.hash),
@@ -326,7 +326,7 @@ class RoutingTable(object):
         return start
 
     def lookup_preceding(self, value):
-        """ Finds the finger table entry that comes before the given value.
+        """ Finds the route that comes before the given value.
         """
         for i in xrange(len(self) - 1, -1, -1):
             n = self.finger(i).node
@@ -350,7 +350,7 @@ class RoutingTable(object):
     @property
     def real_length(self):
         """ Returns the number of unique nodes in the finger table. """
-        return len(set([ self.finger(i).node for i in xrange(len(self)) ]))
+        return len(set([self.finger(i).node for i in xrange(len(self))]))
 
     def __len__(self):  return len(self.entries)
     def __repr__(self): return str(self)

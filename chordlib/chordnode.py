@@ -23,7 +23,7 @@ class Stabilizer(commlib.InfiniteThread):
     def _loop_method(self):
         self.sleep = random.randint(3, 10)
         self.node.stabilize()
-        self.node.fix_fingers()
+        # self.node.fix_fingers()
 
 
 class ChordNode(object):
@@ -46,10 +46,10 @@ class ChordNode(object):
         super(ChordNode, self).__init__()
 
         self._hash = node_hash
-        self.predecessor = None
         self.chord_addr = (socket.gethostbyname(listener_addr[0]),
                            listener_addr[1])
         self.fingers = routing.RoutingTable(self)
+        self._predecessor = None
 
     def add_node(self, node):
         """ Adds a node to the internal finger table.
@@ -70,6 +70,38 @@ class ChordNode(object):
     @property
     def successor(self):
         return self.finger(0).node
+
+    #
+    # The way we handle predecessor nodes is special. As soon as the finger
+    # table becomes valid, so does the predecessor. *But*, if someone sets the
+    # predecessor property *and it's closer than the existing one*, it's
+    # overwritten.
+    #
+    @property
+    def predecessor(self):
+        if not self._predecessor and self.finger(0).node is None:
+            return None
+
+        if self._predecessor:
+            return self._predecessor
+
+        # root is fallback of `lookup_preceding`
+        lookup = self.fingers.lookup_preceding(int(self.hash) - 1)
+        return None if lookup is self else lookup
+
+    @predecessor.setter
+    def predecessor(self, node):
+        if node is self:
+            import pdb; pdb.set_trace()
+            raise ValueError("the fuck?")
+
+        import pdb; pdb.set_trace()
+        self.fingers.insert(node)
+
+        m = self.fingers.modulus
+        n, p, h = int(node.hash), int(self.predecessor.hash), int(self.hash)
+        if routing.moddist(n, h, m) < routing.moddist(p, h, m):
+            self._predecessor = node
 
     @property
     def hash(self):     return self._hash

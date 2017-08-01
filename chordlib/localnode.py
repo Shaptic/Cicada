@@ -31,9 +31,6 @@ def prevent_nonpeers(fn):
     This adds an additional parameter to the method -- the node itself that was
     found. More often than not, we don't care about the raw socket, so this is
     more useful.
-
-    FIXME: Is there a reason to keep the original socket? Maybe we don't need
-           the extra parameter at all.
     """
     def wrapper(self, sock, *args, **kwargs):
         node = self._peerlist_contains(sock)
@@ -385,7 +382,7 @@ class LocalNode(chordnode.ChordNode):
             node.fingers.remove(node.successor)
 
         node.fingers.insert(info_resp.successor)
-        node.predecessor = info_resp.predecessor
+        node.fingers.insert(info_resp.predecessor)
 
         return info_resp
 
@@ -445,7 +442,9 @@ class LocalNode(chordnode.ChordNode):
         response = chordpkt.JoinResponse.make_packet(response_object,
             self.hash, self.predecessor, self.successor, original=msg)
 
-        assert self.predecessor != self
+        import pdb;
+        if self.predecessor == self:
+            pdb.set_trace()
 
         self.processor.response(sock, response)
         return True
@@ -468,7 +467,6 @@ class LocalNode(chordnode.ChordNode):
         L.info("    Our new predecessor hash: %d on %s:%d",
                joinr_msg.req_succ_hash, *joinr_msg.req_succ_addr)
 
-        import pdb; pdb.set_trace()
         result = self._peerlist_contains(joinr_msg.req_succ_addr)
         if result is not None:
             L.info("    We already know about this peer.")
@@ -489,7 +487,15 @@ class LocalNode(chordnode.ChordNode):
                 joinr_msg.request_successor.chord_addr,
                 peer_hash=joinr_msg.request_successor.hash)
 
+            conn = chordpkt.ConnectRequest.make_packet(self.hash,
+                self.predecessor, self.successor)
+            self.processor.request(result.peer_sock, conn, lambda *args: True)
+
         self.add_node(result)
+
+        # Theoretically, this should be picked up during stabilization, but we
+        # can speed that up by setting it directly here.
+        self.predecessor = result
 
         if self.successor != result:
             L.critical("Somehow ended up with an invalid successor!")
@@ -503,6 +509,8 @@ class LocalNode(chordnode.ChordNode):
         """
         L.debug("notify::sock: %s->%s", sock.getpeername(), sock.getsockname())
         L.debug("notify::msg:  %s", msg)
+
+        request = chordpkt.NotifyRequest.unpack(msg.data)
 
         if self.predecessor is None or routing.Interval(
             self.predecessor.hash, self.hash).within(node.hash):
@@ -520,6 +528,7 @@ class LocalNode(chordnode.ChordNode):
 
         if self.predecessor == self:
             L.critical("We set ourselves as our own predecessor!")
+            import pdb; pdb.set_trace()
             raise ValueError
 
         notify_msg = chordpkt.NotifyResponse.make_packet(

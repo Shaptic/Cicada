@@ -43,9 +43,9 @@ class PackedHash(PackedObject):
     """ Describes how to serialize a `Hash` object.
     """
     RAW_FORMAT = [
-        "H",    # hash length, in bytes (32 for SHA256)
+        "H",    # hash length, in bytes
         "%ds" % (routing.BITCOUNT / 8),
-                # SHA256 hash
+                # hash value
     ]
 
     def __init__(self, hashval):
@@ -71,6 +71,82 @@ class PackedHash(PackedObject):
         return routing.Hash(hashed=nhash), bytestream[offset:]
 
 
+class PackedNode(object):
+    """ Describes how to completely serialize a Chord node.
+    """
+    RAW_FORMAT = [
+        PackedHash.EMBED_FORMAT,    # node hash
+        PackedAddress.EMBED_FORMAT, # node listener
+        "?",                        # predecessor valid bit
+        PackedHash.EMBED_FORMAT,    # predecessor hash
+        PackedAddress.EMBED_FORMAT, # predecessor listener
+        "?",                        # successor valid bit
+        PackedHash.EMBED_FORMAT,    # successor hash
+        PackedAddress.EMBED_FORMAT  # successor listener
+    ]
+
+    def __init__(self, node):
+        if not isinstance(node, chordnode.ChordNode):
+            raise TypeError("expected ChordNode, got %s" % str(type(node)))
+
+        self.node = node
+
+    def pack(self):
+        pred_valid = self.node.predecessor is not None
+        succ_valid = self.node.successor   is not None
+
+        pred_hash = self.node.predecessor.hash if pred_valid else \
+                    routing.Hash(hashed="0" * routing.HASHLEN)
+        pred_addr = self.node.predecessor.chord_addr if pred_valid else \
+                    ("0.0.0.0", 0)
+
+        succ_hash = self.node.successor.hash if succ_valid else \
+                    routing.Hash(hashed="0" * routing.HASHLEN)
+        succ_addr = self.node.successor.chord_addr if succ_valid else \
+                    ("0.0.0.0", 0)
+
+        return struct.pack('!' + self.FORMAT,
+            PackedHash(self.node.hash).pack(),
+            PackedAddress(self.node.chord_addr).pack(),
+            pred_valid,
+            PackedHash(pred_hash).pack(),
+            PackedAddress(*pred_addr).pack(),
+            succ_valid,
+            PackedHash(succ_hash).pack(),
+            PackedAddress(*succ_addr).pack())
+
+    @classmethod
+    def unpack(cls, bs):
+        offset = 0
+        get = lambda i: message.MessageContainer.extract_chunk(
+            cls.RAW_FORMAT[i], bytestream, offset)
+
+        # The offset we want is whatever is after the hash, so just subtract the
+        # length of the buffer after parsing the hash+address from the total
+        # buffer.
+        offset = len(bs)
+        node_hash, bs = PackedHash.unpack(bs)
+        node_addr, bs = PackedAddress.unpack(bs)
+        offset -= len(bs)
+
+        pred_valid, offset = get(1)
+        pred_hash, bs = PackedHash.unpack(bs[offset:])
+        pred_addr, bs = PackedAddress.unpack(bs)
+        pred = chordnode.ChordNode(pred_hash, pred_addr) if pred_valid else None
+
+        offset = 0
+        succ_valid, offset = get(1)
+        succ_hash, bs = PackedHash.unpack(bs[offset:])
+        succ_addr, bs = PackedAddress.unpack(bs)
+        succ = chordnode.ChordNode(succ_hash, succ_addr) if succ_valid else None
+
+        # Since we can't create a RemoteNode here, we create one that emulates
+        # the properties we've received.
+        rn = collections.namedtuple("RemoteNode", "predecessor successor")
+        sender = rn(pred, succ)
+        cls(sender)
+
+
 class InfoRequest(message.BaseMessage):
     RAW_FORMAT = []
     TYPE = message.MessageType.MSG_CH_INFO
@@ -82,10 +158,8 @@ class InfoRequest(message.BaseMessage):
 class InfoResponse(message.BaseMessage):
     RAW_FORMAT = [
         PackedHash.EMBED_FORMAT,        # sender hash
-
         PackedHash.EMBED_FORMAT,        # sender's predecessor hash
         PackedAddress.EMBED_FORMAT,     # ^ address
-
         PackedHash.EMBED_FORMAT,        # sender's successor hash
         PackedAddress.EMBED_FORMAT,     # ^ address
     ]
@@ -145,8 +219,8 @@ class JoinRequest(message.BaseMessage):
 
     TYPE = message.MessageType.MSG_CH_JOIN
     RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,
-        PackedAddress.EMBED_FORMAT
+        PackedHash.EMBED_FORMAT,    # joinee hash
+        PackedAddress.EMBED_FORMAT  # joinee listener
     ]
 
     def __init__(self, sender_hash, listener_addr):
@@ -218,12 +292,11 @@ class JoinResponse(InfoResponse):
         return cls(rsn, info.sender, info.predecessor, info.successor)
 
 
-class NotifyRequest(message.BaseMessage):
-    RAW_FORMAT = []
+class NotifyRequest(InfoResponse):
     TYPE = message.MessageType.MSG_CH_NOTIFY
 
-    def __init__(self):
-        super(NotifyRequest, self).__init__(self.TYPE)
+    def __init__(self, *args):
+        super(NotifyRequest, self).__init__(*args)
 
 
 class NotifyResponse(InfoResponse):
