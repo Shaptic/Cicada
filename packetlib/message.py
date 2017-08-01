@@ -26,17 +26,13 @@ class MessageType:
     """ Describes the various types of messages in the Cicada protocol.
     """
     MSG_CH_JOIN     = 0x0001
-    MSG_CH_JOINR    = MSG_CH_JOIN    + 1
-    MSG_CH_INFO     = MSG_CH_JOINR   + 1
-    MSG_CH_INFOR    = MSG_CH_INFO    + 1
-    MSG_CH_NOTIFY   = MSG_CH_INFOR   + 1
-    MSG_CH_NOTIFYR  = MSG_CH_NOTIFY  + 1
-    MSG_CH_LOOKUP   = MSG_CH_NOTIFYR + 1
-    MSG_CH_LOOKUPR  = MSG_CH_LOOKUP  + 1
-    MSG_CH_PING     = MSG_CH_LOOKUPR + 1
-    MSG_CH_PONG     = MSG_CH_PING    + 1
-    MSG_CH_QUIT     = MSG_CH_PONG    + 1
-    MSG_CH_ACK      = MSG_CH_QUIT    + 1
+    MSG_CH_INFO     = MSG_CH_JOIN   + 1
+    MSG_CH_NOTIFY   = MSG_CH_INFO   + 1
+    MSG_CH_LOOKUP   = MSG_CH_NOTIFY + 1
+    MSG_CH_PING     = MSG_CH_LOOKUP + 1
+    MSG_CH_PONG     = MSG_CH_PING   + 1
+    MSG_CH_QUIT     = MSG_CH_PONG   + 1
+    MSG_CH_ACK      = MSG_CH_QUIT   + 1
     MSG_CH_ERROR    = 0x00FF
     MSG_CH_MAX      = 0x00FF                # last Chord-type message
 
@@ -45,25 +41,15 @@ class MessageType:
     # A simple constant-to-string conversion table for human-readability.
     LOOKUP = {
         MSG_CH_JOIN:    "JOIN",
-        MSG_CH_JOINR:   "JOIN-RESP",
         MSG_CH_NOTIFY:  "NOTIFY",
-        MSG_CH_NOTIFYR: "NOTIFY-RESP",
         MSG_CH_LOOKUP:  "LOOKUP",
-        MSG_CH_LOOKUPR: "LOOKUP-RESP",
         MSG_CH_INFO:    "INFO",
-        MSG_CH_INFOR:   "INFO-RESP",
         MSG_CH_ERROR:   "ERROR",
         MSG_CH_PING:    "PING",
         MSG_CH_PONG:    "PONG",
         MSG_CH_QUIT:    "QUIT",
         MSG_CH_ACK:     "ACK",
     }
-
-
-class QuickType:
-    ERROR    = 0x01
-    REQUEST  = 0x02
-    RESPONSE = 0x04
 
 
 class UnpackException(Exception):
@@ -85,7 +71,7 @@ class MessageContainer(object):
 
     CHORD_PR  = "\x63\x68"      # ch
     CICADA_PR = "\x63\x69"      # ci
-    VERSION   = "\x00\x01"      # v0.1
+    VERSION   = "\x00\x02"      # v0.2
     END       = "\x47\x4b\x04"  # GK[EoT]
 
     RAW_FORMATS = {
@@ -93,10 +79,10 @@ class MessageContainer(object):
             "2s",   # protocol identifier
             "2s",   # version
             "h",    # message type
+            "?",    # response indication
             "I",    # sequence number
             "16s",  # checksum
             "I",    # payload length, P
-            "B",    # quicker message type
         ],
         MessageBlob.MSG_RESPONSE: [
             "I",    # sequence number of request
@@ -132,14 +118,6 @@ class MessageContainer(object):
     SUFFIX_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END] % 0)
     MIN_MESSAGE_LEN = chutils.nextmul(HEADER_LEN + SUFFIX_LEN, 8)
 
-    @staticmethod
-    def quick_type_from_type(msg_type):
-        if msg_type == MessageType.MSG_CH_ERROR:
-            return QuickType.ERROR
-        elif msg_type % 2 == 0:     # even numbers are responses
-            return QuickType.RESPONSE
-        return QuickType.REQUEST
-
     def __init__(self, msg_type, data="", sequence=0, original=None):
         """ Prepares a packet.
 
@@ -147,10 +125,11 @@ class MessageContainer(object):
         header and the suffix. The other message objects are responsible for
         packing the data in a specific way.
 
-        :msg_type
-        :data
-        :sequence
-        :original
+        :msg_type   `MessageType` specification of this message
+        :data       raw data to place inside of the packet
+        :sequence   sequence number of the packet
+        :original   the message being responded to, which indicates that this is
+                    a response message
         """
         self.type = msg_type
         self.data = data
@@ -165,15 +144,12 @@ class MessageContainer(object):
             self.protocol,
             self.VERSION,
             self.msg_type,
+            self.is_response,
             self.seq,
             '\x00' * 16,
-            len(self.data),
-            self.quick_type)
+            len(self.data))
 
-        if self.quick_type in (QuickType.RESPONSE, QuickType.ERROR):
-            assert self.original is not None, \
-                   "RESPONSE type, but what are we responding to?"
-
+        if self.is_response:
             header += struct.pack(
                 '!' + self.FORMATS[MessageBlob.MSG_RESPONSE],
                 self.original.seq,
@@ -196,7 +172,7 @@ class MessageContainer(object):
         packet = self._inject_checksum(packet, self.checksum)
 
         assert len(packet) == self.length, \
-               "Expected len=%d, got %d." % (len(packet), self.length)
+               "expected len=%d, got %d." % (len(packet), self.length)
         return packet
 
     @classmethod
@@ -227,7 +203,6 @@ class MessageContainer(object):
             raise UnpackException(ExceptionType.EXC_TOO_SHORT, len(packet))
 
         ## Validate the header.
-        # TODO: Support multiple versions.
         header_fmt = cls.RAW_FORMATS[MessageBlob.MSG_HEADER]
         offset = 0
 
@@ -245,16 +220,16 @@ class MessageContainer(object):
 
         # TODO: Ensure type matches protocol.
         msgtype,   offset = get(2)
-        seq_no,    offset = get(3)
-        checksum,  offset = get(4)
-        payload_sz,offset = get(5)
-        quicktype, offset = get(6)
+        is_resp,   offset = get(3)
+        seq_no,    offset = get(4)
+        checksum,  offset = get(5)
+        payload_sz,offset = get(6)
 
         resp = None
         data_offset = cls.HEADER_LEN
         total_len = data_offset + payload_sz + cls.SUFFIX_LEN
 
-        if quicktype in (QuickType.RESPONSE, QuickType.ERROR):
+        if is_resp:
             data_offset += cls.RESPONSE_LEN
             total_len += cls.RESPONSE_LEN
 
@@ -364,8 +339,8 @@ class MessageContainer(object):
         return self.type
 
     @property
-    def quick_type(self):
-        return MessageContainer.quick_type_from_type(self.msg_type)
+    def is_response(self):
+        return self.original is not None
 
     @staticmethod
     def extract_chunk(fmt, data, i):
@@ -385,8 +360,7 @@ class MessageContainer(object):
     def __str__(self):
         return "<%s(%dB)%s>" % (
             MessageType.LOOKUP[self.type], self.length,
-            "" if self.quick_type not in (QuickType.RESPONSE, QuickType.ERROR) \
-               else (" | to=%d" % self.original.seq))
+            (" | to=%d" % self.original.seq) if self.is_response else "")
 
 
 class FormatMetaclass(type):
