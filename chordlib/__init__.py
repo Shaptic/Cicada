@@ -10,8 +10,8 @@ class ChordFormatter(logging.Formatter):
     """ Allows for special formatting for debug logging to include line info.
     """
 
-    PREFIX = "[%s | %%(asctime)s]"
-    SUFFIX = "%(levelname)08s: %(message)s"
+    PREFIX = "[%s | %%(asctime)s] "
+    SUFFIX = "%(message)s"
     FORMAT = "%s %s" % (PREFIX % ("%(module)s"), SUFFIX)
     FORMAT = DEBUG_FORMAT = "%s %s" % (
         "[%(asctime)s]",

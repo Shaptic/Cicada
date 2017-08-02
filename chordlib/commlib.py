@@ -266,10 +266,26 @@ class SocketProcessor(InfiniteThread):
             handler, as is typically the case for request messages.
         """
         if not isinstance(peer, ThreadsafeSocket):
-            raise TypeError("Initialized processor thread without socket.")
+            raise TypeError("expected socket, got %s" % type(peer))
 
         L.debug("Added %s to processing list", repr(peer.getpeername()))
         self.sockets[peer] = SocketProcessor.MessageStream(on_request)
+
+    def close_socket(self, peer):
+        """ Closes and removes a socket from being managed.
+        """
+        if peer not in self.sockets:
+            L.warning("The peer is not being managed by this processor.")
+            return False
+
+        L.info("Closing connection with peer on %s:%d", peer.getpeername()[0],
+               peer.getpeername()[1])
+
+        # Should we close any pending requests here?
+        stream = self.sockets.pop(peer)
+        peer.shutdown(socket.SHUT_RDWR)
+        peer.close()
+        return True
 
     def prepare_request(self, receiver, message, event):
         """ Adds an event to wait for a response to the given message.
@@ -282,6 +298,7 @@ class SocketProcessor(InfiniteThread):
         :event      the threading event object to signal on receipt.
         """
         if receiver not in self.sockets:
+            import pdb; pdb.set_trace()
             raise ValueError("Socket not registered with this processor.")
 
         stream = self.sockets[receiver]

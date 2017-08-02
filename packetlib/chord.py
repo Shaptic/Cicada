@@ -279,12 +279,23 @@ class NotifyRequest(InfoResponse):
 
 
 class NotifyResponse(message.BaseMessage):
-    RAW_FORMAT = []
+    RAW_FORMAT = [
+        "?" # did we end up setting the sender as a new predecessor?
+    ]
     TYPE = message.MessageType.MSG_CH_NOTIFY
     RESPONSE = True
 
-    def __init__(self):
+    def __init__(self, set_predecessor):
         super(NotifyResponse, self).__init__(self.TYPE)
+        self.set_pred = set_predecessor
+
+    def pack(self):
+        return struct.pack('!' + self.FORMAT, self.set_pred)
+
+    @classmethod
+    def unpack(cls, bs):
+        bit = struct.unpack('!' + self.FORMAT, bs)
+        return cls(bit)
 
 
 class LookupRequest(message.BaseMessage):

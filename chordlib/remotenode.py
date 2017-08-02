@@ -33,7 +33,7 @@ import select
 import socket
 
 from chordlib import commlib
-from chordlib import chordnode
+from chordlib import chordnode, L
 from chordlib import routing
 
 class RemoteNode(chordnode.ChordNode):
@@ -83,9 +83,13 @@ class RemoteNode(chordnode.ChordNode):
             h = routing.Hash(hashed=node_hash)
 
         super(RemoteNode, self).__init__(h, listener_addr)
+        L.info("Created a remote peer with hash %d on %s:%d.",
+               self.hash, self.chord_addr[0], self.chord_addr[1])
 
     def __str__(self):
-        return "<RemoteNode(%s:%d) | hash=%d,pred=%s,succ=%s>" % (
-            self.chord_addr[0], self.chord_addr[1], self.hash,
+        remote = self.peer_sock.getpeername()
+        return "[%s<-remote@%s:%d(%s:%d|hash=%d)->%s]" % (
             str(int(self.predecessor.hash)) if self.predecessor else None,
+            remote[0], remote[1], self.chord_addr[0], self.chord_addr[1],
+            self.hash,
             str(int(self.successor.hash))   if self.successor   else None)

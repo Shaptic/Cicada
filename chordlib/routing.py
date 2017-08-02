@@ -9,9 +9,7 @@ from chordlib import utils, L
 
 HASHFN = hashlib.md5#hashlib.sha256
 def chord_hash(data):
-    import random, string
-    return ''.join([ random.choice(string.letters) for _ in xrange(2) ])
-    return HASHFN(data).digest()
+    return HASHFN(data).digest()[:2]
 
 
 HASHLEN = len(chord_hash("0"))

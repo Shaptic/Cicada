@@ -50,12 +50,12 @@ class ChordNode(object):
         self.predecessor = None
         self.successor = None
 
-        L.info("Created Chord peer with hash %d on %s:%d.",
-               self.hash, self.chord_addr[0], self.chord_addr[1])
-
     def __repr__(self): return str(self)
-    def __str__(self):  return "<ChordNode | hash=%d,%s:%d>" % (
-                            self.hash, self.chord_addr[0], self.chord_addr[1])
+    def __str__(self):
+        return "[%s<-peer(%s:%d|hash=%d)->%s" % (
+            str(int(self.predecessor.hash)) if self.predecessor else None,
+            self.chord_addr[0], self.chord_addr[1], self.hash,
+            str(int(self.successor.hash)) if self.successor else None)
 
 
 def walk_ring(root, max_count=10, on_node=lambda x: None):
