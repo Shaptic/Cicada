@@ -43,7 +43,7 @@ class Hash(object):
 
         self._value = value
         if self._value:
-            self._hash_str  = chord_hash(self._value).ljust(HASHLEN, '\x00')
+            self._hash_str  = chord_hash(self._value).rjust(HASHLEN, '\x00')
             self._hash_ints = Hash.pack_hash(self._hash_str)
 
         elif isinstance(hashed, str):
@@ -145,7 +145,7 @@ class Hash(object):
             ])
             chunks.append(chunk)
 
-        return ''.join(chunks).ljust(CHUNKLEN, '\x00')
+        return ''.join(chunks).ljust(HASHLEN, '\x00')
 
 
 class Interval(object):

@@ -206,7 +206,6 @@ class LocalNode(chordnode.ChordNode):
             self.successor.hash = response.request_successor.hash
 
         else:
-            self.processor.close_socket(self.successor.peer_sock)
             L.info("    Connecting to our provided successor.")
             self.successor = self.add_peer(response.req_succ_hash,
                                            response.req_succ_addr)
@@ -413,6 +412,26 @@ class LocalNode(chordnode.ChordNode):
                     return peer
             else:
                 return self._peerlist_contains(elem.peer_sock)
+
+    @property
+    def predecessor(self):
+        return self._predecessor
+
+    @property
+    def successor(self):
+        return self._successor
+
+    @predecessor.setter
+    def predecessor(self, pred):
+        if self._predecessor and self._predecessor != self._successor:
+            self.processor.close_socket(self._predecessor.peer_sock)
+        self._predecessor = pred
+
+    @successor.setter
+    def successor(self, succ):
+        if self._successor and self._successor != self._predecessor:
+            self.processor.close_socket(self.successor.peer_sock)
+        self._successor = succ
 
     def __str__(self):
         return "[%s<-local(%s:%d|hash=%d)->%s]" % (
