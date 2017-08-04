@@ -43,9 +43,8 @@ class PackedHash(PackedObject):
     """ Describes how to serialize a `Hash` object.
     """
     RAW_FORMAT = [
-        "H",    # hash length, in bytes
-        "%ds" % (routing.BITCOUNT / 8),
-                # hash value
+        "%dI" % int(routing.HASHLEN / 4),
+                # hash value in discrete integers
     ]
 
     def __init__(self, hashval):
@@ -55,20 +54,16 @@ class PackedHash(PackedObject):
         self.hashval = hashval
 
     def pack(self):
-        return struct.pack('!' + self.FORMAT,
-                           len(str(self.hashval)),
-                           str(self.hashval))
+        return struct.pack('!' + self.FORMAT, *self.hashval.parts)
 
     @classmethod
-    def unpack(cls, bytestream):
+    def unpack(cls, bs):
         offset = 0
         get = lambda i: message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[i], bytestream, offset)
+            cls.RAW_FORMAT[i], bs, offset, keep_chunks=True)
 
-        hashlen, offset = get(0)
-        nhash,   offset = get(1)
-
-        return routing.Hash(hashed=nhash), bytestream[offset:]
+        parts, i = get(0)
+        return routing.Hash(hashed=routing.Hash.unpack_hash(parts)), bs[i:]
 
 
 class PackedNode(PackedObject):

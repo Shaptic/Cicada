@@ -14,11 +14,13 @@ import random
 import string
 from   chordlib.routing import chord_hash, Hash
 
+print "Running hashing test."
 for i in xrange(1000):
     start = ''.join([
         random.choice(string.lowercase) for _ in xrange(random.randint(10, 20))
     ])
 
+    print "  Trying value=%s..." % start
     h = Hash(value=start)
     assert Hash.pack_hash(str(h)) == h.parts, \
            "pack check failed for value=%s, hash=%s, calc=%s" % (

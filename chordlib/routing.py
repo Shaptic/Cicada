@@ -1,6 +1,7 @@
 """ Defines hashing functions and the Chord finger table.
 """
 
+import math
 import hashlib
 
 from chordlib import search
@@ -12,7 +13,8 @@ def chord_hash(data):
     return HASHFN(data).digest()[:2]
 
 
-HASHLEN = len(chord_hash("0"))
+HASHLEN  = utils.nextmul(len(chord_hash("0")), 4)
+CHUNKLEN = int(math.ceil(HASHLEN / 4.0))
 BITCOUNT = HASHLEN * 8
 HASHMOD  = 2 ** BITCOUNT
 
@@ -41,7 +43,7 @@ class Hash(object):
 
         self._value = value
         if self._value:
-            self._hash_str  = chord_hash(self._value)
+            self._hash_str  = chord_hash(self._value).ljust(HASHLEN, '\x00')
             self._hash_ints = Hash.pack_hash(self._hash_str)
 
         elif isinstance(hashed, str):
@@ -130,9 +132,9 @@ class Hash(object):
     def unpack_hash(hash_chunks):
         """ Unpacks a series of integers into a hash string.
         """
-        if len(hash_chunks) != int(HASHLEN / 4):
+        if len(hash_chunks) != CHUNKLEN:
             raise ValueError("expected %d integers, got: %s" % (
-                             HASHLEN % 4, hash_chunks))
+                             CHUNKLEN, hash_chunks))
 
         chunks = []
         for num in hash_chunks:
@@ -143,7 +145,7 @@ class Hash(object):
             ])
             chunks.append(chunk)
 
-        return ''.join(chunks)
+        return ''.join(chunks).ljust(CHUNKLEN, '\x00')
 
 
 class Interval(object):

@@ -320,12 +320,13 @@ class MessageContainer(object):
         return self.original is not None
 
     @staticmethod
-    def extract_chunk(fmt, data, i):
+    def extract_chunk(fmt, data, i, keep_chunks=False):
         """ Extracts a chunk `fmt` out of a packet `data` at index `i`.
         """
         blob_len = struct.calcsize('!' + fmt)
         assert len(data[i:]) >= blob_len, "Invalid blob."
-        return struct.unpack('!' + fmt, data[i : i + blob_len])[0], blob_len + i
+        unpack = struct.unpack('!' + fmt, data[i : i + blob_len])
+        return unpack[0] if not keep_chunks else unpack, blob_len + i
 
     @staticmethod
     def version_to_str(v):
