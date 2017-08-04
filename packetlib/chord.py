@@ -280,7 +280,7 @@ class NotifyRequest(InfoResponse):
 
 class NotifyResponse(message.BaseMessage):
     RAW_FORMAT = [
-        "?" # did we end up setting the sender as a new predecessor?
+        "?", # did we end up setting the sender as a new predecessor?
     ]
     TYPE = message.MessageType.MSG_CH_NOTIFY
     RESPONSE = True

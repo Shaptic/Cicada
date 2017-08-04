@@ -270,6 +270,7 @@ class SocketProcessor(InfiniteThread):
 
         L.debug("Added %s to processing list", repr(peer.getpeername()))
         self.sockets[peer] = SocketProcessor.MessageStream(on_request)
+        L.debug("Processing list: %d", len(self.sockets))
 
     def close_socket(self, peer):
         """ Closes and removes a socket from being managed.

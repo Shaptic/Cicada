@@ -17,40 +17,6 @@ BITCOUNT = HASHLEN * 8
 HASHMOD  = 2 ** BITCOUNT
 
 
-def pack_string(data):
-    """ Turns a string into its unique numeric representation.
-
-    Packs a string into a binary value by summing each individual character,
-    appropriately shifted. For example,
-
-        "HI" is converted to 'H' + ('I' << 8), where each character is the ASCII
-        digit equivalent.
-
-    This assumes an ASCII charset because of the 8-bit-per-character factor.
-
-    Of course, long strings become incredibly large numbers. Python does support
-    arbitrarily large numbers, but I don't recommend using this function for
-    very long strings.
-    """
-    if not isinstance(data, str):
-        raise TypeError("Expected str, got %s" % str(type(data)))
-
-    total = 0
-    for i, c in enumerate(data):
-        total += ord(c) << (8 * (len(data) - 1 - i))
-
-    L.debug("Hash for %s -- %d", repr(data), total)
-    return total
-
-def unpack_string(val):
-    """ Turns a numeric value into a string by treating every byte as a char.
-    """
-    string = ""
-    while val > 0:
-        string += chr(val & 0xFF)
-        val >>= 8
-    return string[::-1]
-
 def khash(k, m):
     return (2 ** k) % m
 
@@ -75,51 +41,109 @@ class Hash(object):
 
         self._value = value
         if self._value:
-            self._hash_str = chord_hash(self._value)
-            self._hash_int = pack_string(self._hash_str)
-
-        elif isinstance(hashed, int):
-            self._hash_str = unpack_string(hashed)
-            self._hash_int = hashed
+            self._hash_str  = chord_hash(self._value)
+            self._hash_ints = Hash.pack_hash(self._hash_str)
 
         elif isinstance(hashed, str):
-            self._hash_str = hashed
-            self._hash_int = pack_string(hashed)
+            self._hash_str  = hashed
+            self._hash_ints = Hash.pack_hash(hashed)
 
         elif isinstance(hashed, Hash):  # copy
-            self._hash_str = str(hashed)
-            self._hash_int = int(hashed)
+            self._hash_str  = str(hashed)
+            self._hash_ints = tuple(hashed.parts)
             self._value = hashed.value
 
         else:
             raise TypeError("Expected value or (int, str, Hash), got: "
                 "value='%s',hashed='%s'" % (value, hashed))
 
-        assert str(self) == unpack_string(int(self)), \
+        assert str(self) == Hash.unpack_hash(self.parts), \
             "Unpacked hash must match direct hash!"
 
-        assert len(str(self)) == (BITCOUNT / 8), \
+        assert len(str(self)) == HASHLEN, \
             "Invalid hash size: %s" % str(self)
 
     @property
     def value(self):
         return self._value
 
+    @property
+    def parts(self):
+        return self._hash_ints
+
+    def __int__(self):
+        return sum([
+            i << (32 * j) for j, i in enumerate(self.parts[::-1])
+        ]) % HASHMOD
+
     def __eq__(self, other):
-        if isinstance(other, int):
-            return int(self) == other
-        elif isinstance(other, str):
-            return str(self) == other
-        elif isinstance(other, Hash):
-            return int(self) == int(other)
+        if isinstance(other, int):    return int(self) == other
+        elif isinstance(other, str):  return str(self) == other
+        elif isinstance(other, Hash): return int(self) == int(other)
         raise TypeError("expected int,str,Hash, got %s" % type(other))
 
     def __ne__(self, other):
         return not (self == other)
 
+    def __lt__(self, other):
+        for i in len(self.parts):
+            if self.parts[i] < other.parts[i]:
+                return True
+            elif self.parts[i] > other.parts[i]:
+                return False
+        return False
+
+    def __gt__(self, other):
+        for i in len(self.parts):
+            if self.parts[i] > other.parts[i]:
+                return True
+            elif self.parts[i] < other.parts[i]:
+                return False
+        return False
+
+    def __le__(self, other):
+        return self < other and self == other
+
+    def __ge__(self, other):
+        return self > other and self == other
+
     def __str__(self):  return self._hash_str
-    def __int__(self):  return self._hash_int % HASHMOD
-    def __repr__(self): return str(int(self))
+    def __repr__(self): return str(self)
+
+    @staticmethod
+    def pack_hash(data):
+        """ Packs an output of the hashing function into a series of integers.
+        """
+        if len(data) != HASHLEN:
+            raise ValueError("expected a hash, got something else? %s" % data)
+
+        chunks = []
+        for i in xrange(0, HASHLEN, 4):         # 4 bytes to an integer
+            chunk = data[i : i + 4]
+            # pack characters left to right, shifting a byte per index
+            n = sum([ord(c) << 8 * x for x, c in enumerate(chunk[::-1])])
+            chunks.append(n)
+
+        return tuple(chunks)
+
+    @staticmethod
+    def unpack_hash(hash_chunks):
+        """ Unpacks a series of integers into a hash string.
+        """
+        if len(hash_chunks) != int(HASHLEN / 4):
+            raise ValueError("expected %d integers, got: %s" % (
+                             HASHLEN % 4, hash_chunks))
+
+        chunks = []
+        for num in hash_chunks:
+            # mask with 0xFF shifted by index and shifted back to be in 0-255
+            chunk = ''.join([
+                chr((num & (0xFF << (8 * i))) >> (8 * i)) \
+                for i in xrange(3, -1, -1)
+            ])
+            chunks.append(chunk)
+
+        return ''.join(chunks)
 
 
 class Interval(object):
