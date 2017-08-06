@@ -16,6 +16,7 @@ The header format is as follows:
   - 2-byte  protocol identifier.
   - 2-byte  protocol version.
   - 2-byte  message type.
+  - 1-byte  response flag.
   - 4-byte  sequence number to uniquely identify the message.
   - 16-byte checksum of the entire packet, excluding the checksum field
             itself, which is treated as zeroed-out.
@@ -27,17 +28,17 @@ The header format is as follows:
 
 For responses and errors, there are additional fields:
 
-  - 4-byte sequence number *and*
-  - 4-byte checksum of the message we're responding to.
+  - 4-byte  sequence number *and*
+  - 16-byte checksum of the message we're responding to.
 
 The content is, naturally, a `P`-byte payload.
 
 ### Terminator ##
-The message is byte-aligned, so there is padding at the end before the
+The message is word-aligned, so there is padding at the end before the
 termination sequence.
 
-  - Z-byte padding of `NUL` bytes (`0x00`).
   - 1-byte padding length, `Z`, which is the amount of padding needed to get
+  - Z-byte padding of `NUL` bytes (`0x00`).
   - 3-byte message terminator, `0x474b04` (`GK[EoT byte]`).
 
 In total, the minimum message size before padding is:
@@ -52,23 +53,29 @@ In Chord, we are concerned with the following message pairs:
   - **Join**        Sent on initialization by a new node (the invitee) to an
                     existing Chord ring, indicating a request to join.
 
-    **JoinResp**    Send by the inviter in response containing the address of
+    **Response**    Send by the inviter in response containing the address of
                     the successor node that follows the invitee.
 
   - **Notify**      After joining, a fresh node will notify other nodes about
                     its existence, in order to allow those nodes to update their
                     predecessors to point to this fresh node if need be.
 
-    **NotifyResp**  An indication of whether or not the node has become this
+    **Response**    An indication of whether or not the node has become this
                     node's new predecessor. If it has, the original node may set
                     it as its successor to create the optimal ring.
 
   - **Info**        This is a request to another node for all of its internal
                     state.
 
-    **InfoResp**    This is an info update representing a node in its entirety
+    **Response**    This is an info update representing a node in its entirety
                     to another. This includes the predecessor and successor
                     addresses and its local finger table.
+
+    **Lookup**      This is the core of the protocol, which performs a lookup
+                    for a particular peer address through the network either
+                    recursively (default) or iteratively.
+
+    **Response**    The peer information of the lookup result.
 
   - **Error**       This can be sent as a request for any reason (for which
                     there is no response needed) or as a response to any of the
@@ -82,14 +89,6 @@ In Chord, we are concerned with the following message pairs:
 
     **Pong**        The response, a simple ACK, with the same code as the one
                     used in the Ping request to truly indicate that you got it.
-
-  - **Quit**        A message indicating that the node is gracefully shutting
-                    down. It's polite to wait for a confirmation, but not
-                    necessary. You can safely close the socket once you've sent
-                    this.
-
-    **Ack**         A simple ACK message with no fluff, which can be used in
-                    general but used here to affirm a Quit receipt.
 
 ## Cicada Message Types ##
 
