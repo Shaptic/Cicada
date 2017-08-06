@@ -412,8 +412,9 @@ class SocketProcessor(InfiniteThread):
 
         try:
             # Send the request and wait for the response.
-            L.debug("Sending message from %s to %s: %s",
-                    peer.getsockname(), peer.getpeername(), msg)
+            here, there = peer.getsockname(), peer.getpeername()
+            L.debug("Sending message %s:%d -> %s:%d: %s",
+                    here[0], here[1], there[0], there[1], msg)
             L.debug("    Sequence number: %d", msg.seq)
             peer.sendall(msg.pack())
 
@@ -470,7 +471,10 @@ class SocketProcessor(InfiniteThread):
                 L.debug("closing err")
                 sock.close()
                 L.debug("pop err")
-                self.sockets.pop(sock)
+                if sock not in self.sockets:
+                    L.warning("On socket error, removed a non-existant key?")
+                else:
+                    self.sockets.pop(sock)
                 L.debug("err")
                 self.on_error(sock)
                 continue

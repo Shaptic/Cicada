@@ -47,7 +47,7 @@ import collections
 import chordlib.localnode
 import chordlib.routing
 
-PEER_COUNT = 5
+PEER_COUNT = 50
 start_port = random.randint(10000, (2 ** 16) - PEER_COUNT - 1)
 peers = []
 print "Creating %d peers..." % PEER_COUNT

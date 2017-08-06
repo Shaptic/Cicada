@@ -512,7 +512,15 @@ class LocalNode(chordnode.ChordNode):
     def on_error(self, socket, graceful=False):
         """ On associating a socket with a peer, removes it from the peerlist.
         """
-        node = self._peerlist_contains(socket)
+
+        # Intentionally don't use `_peerlist_contains` to avoid any calls on the
+        # socket object that may throw.
+        node = None
+        for peer in self.peers:
+            if peer.peer_sock == socket:
+                node = peer
+                break
+
         if node:
             remote = node.chord_addr
             L.warning("Neighbor (%s:%d) went down %sgracefully", remote[0],
