@@ -5,11 +5,19 @@ import threading
 import socket
 import random
 import time
+import enum
 
 from chordlib import L
 from chordlib import commlib
 from chordlib import routing
 from chordlib import utils as chutils
+
+
+class PeerState(enum.Enum):
+    UNKNOWN = 0
+    OPEN    = 1
+    ONEWAY  = 2
+    CLOSED  = 3
 
 
 class Stabilizer(commlib.InfiniteThread):
@@ -47,24 +55,9 @@ class ChordNode(object):
         self.hash = node_hash
         self.chord_addr = (socket.gethostbyname(listener_addr[0]),
                            listener_addr[1])
-        self._predecessor = None
-        self._successor = None
-
-    @property
-    def predecessor(self):
-        return self._predecessor
-
-    @predecessor.setter
-    def predecessor(self, pred):
-        self._predecessor = pred
-
-    @property
-    def successor(self):
-        return self._successor
-
-    @successor.setter
-    def successor(self, succ):
-        self._successor = succ
+        self.predecessor = None
+        self.successor = None
+        self.state = PeerState.UNKNOWN
 
     def __repr__(self): return str(self)
     def __str__(self):

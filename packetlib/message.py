@@ -33,8 +33,8 @@ class MessageType(object):
     MSG_CH_LOOKUP   = MSG_CH_NOTIFY + 1
     MSG_CH_PING     = MSG_CH_LOOKUP + 1
     MSG_CH_PONG     = MSG_CH_PING   + 1
-    MSG_CH_QUIT     = MSG_CH_PONG   + 1
-    MSG_CH_ACK      = MSG_CH_QUIT   + 1
+    MSG_CH_STATE    = MSG_CH_PONG  + 1
+    MSG_CH_QUIT     = MSG_CH_STATE  + 1
     MSG_CH_ERROR    = 0x00FF
     MSG_CH_MAX      = 0x00FF                # last Chord-type message
 
@@ -46,11 +46,11 @@ class MessageType(object):
         MSG_CH_NOTIFY:  "NOTIFY",
         MSG_CH_LOOKUP:  "LOOKUP",
         MSG_CH_INFO:    "INFO",
-        MSG_CH_ERROR:   "ERROR",
         MSG_CH_PING:    "PING",
         MSG_CH_PONG:    "PONG",
+        MSG_CH_STATE:   "STATE",
         MSG_CH_QUIT:    "QUIT",
-        MSG_CH_ACK:     "ACK",
+        MSG_CH_ERROR:   "ERROR",
     }
 
 
@@ -267,7 +267,8 @@ class MessageContainer(object):
         """
         from packetlib import debug as D
         fmts = [self.RAW_FORMATS[MessageBlob.MSG_HEADER]]
-        if self.is_response: fmt.append(RAW_FORMATS[MessageBlob.MSG_RESPONSE])
+        if self.is_response:
+            fmts.append(self.RAW_FORMATS[MessageBlob.MSG_RESPONSE])
 
         pay = D.ProtocolSpecifier(self.RAW_FORMATS[MessageBlob.MSG_PAYLOAD])
         pay.raw_format[0] = pay.raw_format[0] % len(self.data)
@@ -279,7 +280,7 @@ class MessageContainer(object):
         fmts.append(end)
 
         chunks, desc = (sum([fmt.raw_format for fmt in fmts], []),
-                        sum([list(fmt.descriptions) for fmt in fmts], []))
+                        sum(map(lambda x: list(x.descriptions), fmts), []))
         D.dump_packet(self.pack(), D.ProtocolSpecifier(zip(chunks, desc)))
 
     @staticmethod
@@ -324,7 +325,12 @@ class MessageContainer(object):
         """ Extracts a chunk `fmt` out of a packet `data` at index `i`.
         """
         blob_len = struct.calcsize('!' + fmt)
-        assert len(data[i:]) >= blob_len, "Invalid blob."
+        if len(data[i:]) < blob_len:
+            print "  Format[%d]:" % i, fmt
+            debug.hexdump(data)
+            import pdb; pdb.set_trace()
+            assert False, "Invalid blob."
+
         unpack = struct.unpack('!' + fmt, data[i : i + blob_len])
         return unpack[0] if not keep_chunks else unpack, blob_len + i
 
@@ -336,8 +342,8 @@ class MessageContainer(object):
 
     def __repr__(self): return str(self)
     def __str__(self):
-        return "<%s(%dB)%s>" % (
-            MessageType.LOOKUP[self.type], self.length,
+        return "<%s%s(%dB)%s>" % (MessageType.LOOKUP[self.type],
+            "r" if self.is_response else "", self.length,
             (" | to=%d" % self.original.seq) if self.is_response else "")
 
 
@@ -349,7 +355,7 @@ class FormatMetaclass(type):
           contiguous string called `FORMAT`.
 
         - `MESSAGE_SIZE` is defined as the length, in bytes, of this
-          specification. If any of the objects in `FORMAT` take a variable size,
+          specification. If any of the objclass NotifyResponse(message.BaseMessage):ects in `FORMAT` take a variable size,
           such as variable-length strings (which could, for example, be defined
           as "str:H:%ds"), they are assumed to be zero-length. Thus, it's more
           accurate to say `MIN_MESSAGE_SIZE`, I guess.

@@ -46,6 +46,7 @@ class ProtocolSpecifier:
 
 
 FORMAT_STRINGS = {
+    "\?": "bool",
     "B": "ubyte",
     "H": "ushort",
     "h": "short",

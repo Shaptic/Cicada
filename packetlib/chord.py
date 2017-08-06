@@ -1,3 +1,4 @@
+import enum
 import struct
 import collections
 
@@ -136,7 +137,7 @@ class PackedNode(PackedObject):
 
         node.predecessor = pred
         node.successor = succ
-        return cls(node, pred, succ)
+        return cls(node, pred, succ), bs
 
 
 class InfoRequest(message.BaseMessage):
@@ -177,7 +178,7 @@ class InfoResponse(message.BaseMessage):
 
     @classmethod
     def unpack(cls, bs):
-        node = PackedNode.unpack(bs)
+        node, bs = PackedNode.unpack(bs)
         return cls(node.node, node.predecessor, node.successor)
 
 
@@ -289,7 +290,7 @@ class NotifyResponse(message.BaseMessage):
 
     @classmethod
     def unpack(cls, bs):
-        bit = struct.unpack('!' + self.FORMAT, bs)
+        bit = struct.unpack('!' + cls.FORMAT, bs)
         return cls(bit)
 
 
@@ -356,11 +357,37 @@ class LookupResponse(message.BaseMessage):
             self.hops)
 
     @classmethod
-    def unpack(self, bs):
+    def unpack(cls, bs):
         node,    bs = PackedHash.unpack(bs)
         lookup,  bs = PackedHash.unpack(bs)
         mapped,  bs = PackedHash.unpack(bs)
         address, bs = PackedAddress.unpack(bs)
-        hops = message.MessageContainer.extract_chunk(self.RAW_FORMAT[-1], bs, 0)
+        hops = message.MessageContainer.extract_chunk(cls.RAW_FORMAT[-1], bs, 0)
 
         return LookupResponse(node, lookup, mapped, address)
+
+
+class StateMessage(message.BaseMessage):
+    RAW_FORMAT = [
+        PackedNode.EMBED_FORMAT,    # sender peer
+        "H",                        # state variable
+    ]
+    TYPE = message.MessageType.MSG_CH_STATE
+
+    def __init__(self, sender, state):
+        self.sender = sender
+        self.state = state.value if isinstance(state, enum.Enum) else int(state)
+
+    def pack(self):
+        return struct.pack('!' + self.FORMAT,
+                           PackedNode(self.sender, self.sender.predecessor,
+                                      self.sender.successor).pack(),
+                           self.state)
+
+    @classmethod
+    def unpack(cls, bs):
+        sender, bs = PackedNode.unpack(bs)
+        state, bs = message.MessageContainer.extract_chunk(cls.RAW_FORMAT[-1],
+                                                           bs, 0)
+        return StateMessage(sender, state)
+

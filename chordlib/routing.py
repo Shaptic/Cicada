@@ -13,10 +13,11 @@ def chord_hash(data):
     return HASHFN(data).digest()[:2]
 
 
-HASHLEN  = utils.nextmul(len(chord_hash("0")), 4)
+HASHLEN  = len(chord_hash("0"))
 CHUNKLEN = int(math.ceil(HASHLEN / 4.0))
 BITCOUNT = HASHLEN * 8
 HASHMOD  = 2 ** BITCOUNT
+HASHLEN  = utils.nextmul(len(chord_hash("0")), 4)
 
 
 def khash(k, m):

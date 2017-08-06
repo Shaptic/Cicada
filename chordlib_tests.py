@@ -14,18 +14,20 @@ import random
 import string
 from   chordlib.routing import chord_hash, Hash
 
-print "Running hashing test."
-for i in xrange(1000):
+HASH_COUNT = 1000
+print "Running hashing test with %d hashes." % HASH_COUNT
+for i in xrange(HASH_COUNT):
     start = ''.join([
         random.choice(string.lowercase) for _ in xrange(random.randint(10, 20))
     ])
 
-    print "  Trying value=%s..." % start
+    print "  Trying value=%s...\r" % start,
     h = Hash(value=start)
     assert Hash.pack_hash(str(h)) == h.parts, \
            "pack check failed for value=%s, hash=%s, calc=%s" % (
            start, h.parts, Hash.pack_hash(str(h)))
 
+print
 print "Hashing test passed."
 print "All unit tests passed!"
 print "Running stress test."
@@ -45,8 +47,8 @@ import collections
 import chordlib.localnode
 import chordlib.routing
 
-PEER_COUNT = 50
-start_port = random.randint(0xB00B, (2 ** 16) - PEER_COUNT - 1)
+PEER_COUNT = 5
+start_port = random.randint(10000, (2 ** 16) - PEER_COUNT - 1)
 peers = []
 print "Creating %d peers..." % PEER_COUNT
 for i in xrange(PEER_COUNT):
@@ -81,35 +83,48 @@ for peer in peers:
     print peer
 
 print "Ensuring there are no independent loops."
-seen = []
-loops = set()
-stack = [peers[root_index]]
 peermap = {int(n.hash): n for n in peers}
 pprint.pprint(peermap)
-while stack:
-    def find(n):
-        if int(n.hash) not in peermap:
-            import pdb; pdb.set_trace()
-        return peermap[int(n.hash)]
+all_loops = []
 
-    node = stack.pop(0)
-    loops.add(int(node.hash))
-    if node.successor:
-        loops.add(int(node.successor.hash))
-        if node.successor.hash not in seen:
-            stack.append(find(node.successor))
-            seen.append(node.successor.hash)
+while set(sum(map(list, all_loops), [])) != set(peermap.keys()):
+    viable, seen = [
+        node for node in peers \
+        if int(node.hash) not in sum(map(list, all_loops), [])
+    ], []
 
-    if node.predecessor:
-        loops.add(int(node.predecessor.hash))
-        if node.predecessor.hash not in seen:
-            stack.append(find(node.predecessor))
-            seen.append(node.predecessor.hash)
+    loops = set()
+    stack = [random.choice(viable)]
+    while stack:
+        def find(n):
+            if int(n.hash) not in peermap:
+                import pdb; pdb.set_trace()
+            return peermap[int(n.hash)]
 
-if len(loops) != len(peers):
-    print "  FAILED! Only found %d peers in this network." % len(loops)
-    print "  Remainder:", [node for node in peers \
-                           if int(node.hash) not in loops]
+        node = stack.pop(0)
+        loops.add(int(node.hash))
+        if node.successor:
+            loops.add(int(node.successor.hash))
+            if node.successor.hash not in seen:
+                stack.append(find(node.successor))
+                seen.append(node.successor.hash)
+
+        if node.predecessor:
+            loops.add(int(node.predecessor.hash))
+            if node.predecessor.hash not in seen:
+                stack.append(find(node.predecessor))
+                seen.append(node.predecessor.hash)
+
+    all_loops.append(loops)
+
+if len(all_loops) > 1:
+    print "  FAILED! Found multiple network loops."
+    print "  Loops:"
+    for n, loop in enumerate(all_loops):
+        print "    - Loop %d" % n
+        for peer in loop:
+            print "      %s" % peermap[peer]
+        print "    ========="
     sys.exit(1)
 
 print "Performing network validation..."
@@ -122,9 +137,9 @@ for peer in connected:
     ]
 
     expected_successor = min(network, key=lambda x: x.dist).node
-    if expected_successor.hash != peer.successor.hash:
-        print "    FAILED! Expected %d, got %d: %s" % (
-              expected_successor.hash, peer.successor.hash, peer)
+    if not peer.successor or expected_successor.hash != peer.successor.hash:
+        print "    FAILED! Expected %d, got %d: %s" % (expected_successor.hash,
+              peer.successor.hash if peer.successor else 0, peer)
     else:
         print "    PASSED!"
 
