@@ -104,26 +104,30 @@ class ReadQueue(object):
         with self.queue_lock:
             return self.queue.pop(0)
 
+
 class InfiniteThread(threading.Thread):
     """ An abstract thread to run a method forever until its stopped.
     """
     def __init__(self, pause=0, **kwargs):
         super(InfiniteThread, self).__init__(**kwargs)
-        self.sleep = pause
+        self._sleep = pause
         self.running = True
         self.setDaemon(True)
 
     def run(self):
         while self.running:
             self._loop_method()
-            if self.sleep:
-                time.sleep(self.sleep)
+            time.sleep(self.sleep)
 
     def _loop_method(self):
         raise NotImplemented
 
     def stop_running(self):
         self.running = False
+
+    @property
+    def sleep(self):
+        return self._sleep() if callable(self._sleep) else self._sleep
 
 
 class ListenerThread(InfiniteThread):
@@ -184,9 +188,13 @@ class SocketProcessor(InfiniteThread):
 
         When the response is received (`trigger(...)`), the event is set. No
         checking is done on the response; that should be done at a higher level.
+
+        :message    the request we're sending
+        :event      either a callback function or a threading event to trigger
+                    when the response is received
         """
 
-        def __init__(self, message, event=None):
+        def __init__(self, message, event):
             self.request = message
             self.response = None
             self.event = event
@@ -194,7 +202,13 @@ class SocketProcessor(InfiniteThread):
         def trigger(self, receiver, response):
             self.response_socket = receiver
             self.response = response
-            if self.event is not None: self.event.set()
+
+            # For whatever reason, they made `Event` a function that returns an
+            # _Event object, so...
+            if isinstance(self.event, threading.Event().__class__):
+                self.event.set()
+            elif self.event is not None:
+                self.event(receiver, self.response)
 
 
     class MessageStream(object):
@@ -385,7 +399,9 @@ class SocketProcessor(InfiniteThread):
         :wait_time[=None]   in seconds, the amount to wait for a response.
             If it's set to `None`, then we wait an indefinite number of time for
             the response, which is a risky operation as then there's no way to
-            cancel it.
+            cancel it. If set to 0, the request is fired off and `on_response`
+            is executed when the response is received later, which will likely
+            be in a separate thread.
 
         :returns        the value of the response handler, if it's called.
                         Otherwise, `False` is returned on timeout.
@@ -404,7 +420,8 @@ class SocketProcessor(InfiniteThread):
         if msg.is_response:
             raise ValueError("expected a request, got `msg.is_response`.")
 
-        evt = threading.Event()     # signaled when response is ready
+        # This is signaled when the response is ready.
+        evt = on_response if wait_time == 0 else threading.Event()
 
         # Add this request to the current stream for the peer.
         if not self.prepare_request(peer, msg, evt):
@@ -420,6 +437,11 @@ class SocketProcessor(InfiniteThread):
 
         except socket.error:
             raise ValueError("The request cannot be prepared on this socket.")
+
+        if wait_time == 0:
+            L.warning("Triggered fire & forget event, response will be called "
+                      "on a different thread.")
+            return False
 
         entry = self.sockets[peer]
         if not evt.wait(timeout=wait_time):

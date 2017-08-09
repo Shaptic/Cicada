@@ -1,5 +1,7 @@
 import enum
+import time
 import struct
+import random
 import collections
 
 from chordlib  import routing
@@ -391,3 +393,40 @@ class StateMessage(message.BaseMessage):
                                                            bs, 0)
         return StateMessage(sender, state)
 
+
+class PingMessage(message.BaseMessage):
+    """ A heartbeat message pair that expects a matching value in the response.
+    """
+    RAW_FORMAT = [
+        PackedHash.EMBED_FORMAT,
+        "I",    # the pong message should have a matching 8-byte value
+    ]
+    TYPE = message.MessageType.MSG_CH_PING
+    RESPONSE = False
+
+    def __init__(self, sender, iv=None):
+        self.sender = sender
+        self.value = random.randint(1000, 2 ** 31) if not iv else iv
+
+    def pack(self):
+        return struct.pack('!' + self.FORMAT,
+                           PackedHash(self.sender).pack(),
+                           self.value)
+
+    @classmethod
+    def unpack(cls, bs):
+        sender, bs = PackedHash.unpack(bs)
+        v, _ = message.MessageContainer.extract_chunk(cls.RAW_FORMAT[1], bs, 0)
+        return cls(sender, v)
+
+
+class PongMessage(PingMessage):
+    """ A response to a PING message.
+    """
+    RAW_FORMAT = PingMessage.RAW_FORMAT
+    TYPE = message.MessageType.MSG_CH_PONG
+    RESPONSE = True
+
+    def __init__(self, sender, ping_value):
+        super(PongMessage, self).__init__(sender, iv=ping_value)
+        self.time = time.time()

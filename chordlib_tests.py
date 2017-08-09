@@ -47,15 +47,30 @@ import collections
 import chordlib.localnode
 import chordlib.routing
 
-PEER_COUNT = 50
+PEER_COUNT = int(sys.argv[1]) if len(sys.argv) > 1 else 25
 start_port = random.randint(10000, (2 ** 16) - PEER_COUNT - 1)
 peers = []
 print "Creating %d peers..." % PEER_COUNT
 for i in xrange(PEER_COUNT):
     address = ("localhost", start_port + i)
     peer = chordlib.localnode.LocalNode("%s:%d" % address, address)
-    peers.append(peer)
+
+    def pred(n, o, p):
+        print "  Peer", n, "predecessor: %s -> %s" % (
+            o.compact if o else "[None]", p.compact)
+
+    def succ(n, o, s):
+        print "  Peer", n, "successor:   %s -> %s" % (
+            o.compact if o else "[None]", s.compact)
+
+    def rem(n, r):
+        print "  Peer", n, "removed:    %s" % r.compact
+
     print "  Created peer:", peer
+    peer.on_new_predecessor = lambda o, p, peer=peer: pred(peer, o, p)
+    peer.on_new_successor   = lambda o, s, peer=peer: succ(peer, o, s)
+    peer.on_remove          = lambda r, peer=peer: rem(peer, r)
+    peers.append(peer)
 
 root_index = random.randint(0, len(peers) - 1)
 root = peers[root_index]

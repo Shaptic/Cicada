@@ -1,3 +1,4 @@
+import threading
 import math
 
 
@@ -23,6 +24,31 @@ class FixedStack(object):
     @property
     def list(self):
         return self._list
+
+
+class LockedSet(object):
+    """ Implements a set that locks when iterating.
+    """
+    def __init__(self):
+        self.set = set()
+        self.setlock = threading.Lock()
+
+    def add(self, item):
+        with self.setlock:
+            self.set.add(item)
+
+    def remove(self, item):
+        with self.setlock:
+            self.set.remove(item)
+
+    def __iter__(self):
+        with self.setlock:
+            for item in self.set:
+                yield item
+
+    def __len__(self):
+        with self.setlock:
+            return len(self.set)
 
 
 def rad(deg):

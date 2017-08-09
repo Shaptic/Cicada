@@ -16,6 +16,7 @@ from chordlib import L  # the logfile
 from chordlib import utils as chutils
 from chordlib import routing
 from chordlib import commlib
+from chordlib import heartbeat
 from chordlib import chordnode
 from chordlib import remotenode
 
@@ -93,13 +94,19 @@ class LocalNode(chordnode.ChordNode):
         self.processor = commlib.SocketProcessor(self.on_shutdown,
                                                  self.on_error)
         self.processor.start()
-        self.peers = set()
+        self.peers = chutils.LockedSet()
         self.data = data
+        self.on_remove = lambda *args: None
 
         super(LocalNode, self).__init__(routing.Hash(value=data),
                                         self.listener.getsockname())
         L.info("Created local peer with hash %d on %s:%d.",
                self.hash, self.chord_addr[0], self.chord_addr[1])
+
+        # This thread periodically purges the peerlist of dead peers that
+        # haven't responded to our PINGs.
+        self.heartbeat = heartbeat.HeartbeatManager(self.peers, self)
+        self.heartbeat.start()
 
         # This thread periodically performs the stabilization algorithm. It is
         # not started until a JOIN request is sent or received.
@@ -131,6 +138,7 @@ class LocalNode(chordnode.ChordNode):
             L.error("Tried removing a peer that doesn't exist?")
             return False
 
+        self.on_remove(self, peer)
         self.processor.shutdown_socket(peer.peer_sock)
         self.peers.remove(peer)
         return True
@@ -161,6 +169,8 @@ class LocalNode(chordnode.ChordNode):
         self.successor = self.create_peer(routing.Hash(value=remote_str),
                                           remote)
 
+        print "Set initial hash (pre-join): ", int(self.successor.hash)
+
         request  = chordpkt.JoinRequest.make_packet(self.hash, self.chord_addr)
         response = self.processor.request(self.successor.peer_sock, request,
                                           self.on_join_response, timeout)
@@ -169,7 +179,6 @@ class LocalNode(chordnode.ChordNode):
         if not response:
             raise ValueError("JOIN request didn't get a response in time.")
 
-        self.stable.start()
         return request, response
 
     def on_join_request(self, sock, msg):
@@ -256,6 +265,7 @@ class LocalNode(chordnode.ChordNode):
         if self.successor.chord_addr == response.req_succ_addr:
             L.info("    Our entry peer is actually our successor, too!")
             self.successor.hash = response.request_successor.hash
+            print "Updated hash (post-join):", int(self.successor.hash)
 
         else:
             # From this point forward, successor _must always_ be valid.
@@ -265,6 +275,7 @@ class LocalNode(chordnode.ChordNode):
 
         self.successor.predecessor = response.predecessor
         self.successor.successor = response.successor
+        self.stable.start()
         return True
 
     def on_notify_request(self, sock, msg):
@@ -285,23 +296,6 @@ class LocalNode(chordnode.ChordNode):
             L.info("    Peer %s is a better predecessor!", node)
             L.info("    Previously it was: %s", self.predecessor)
 
-            # This is the _only_ location in which we update the predecessor
-            # pointer. As such, we place the old predecessor into the internal
-            # peer list and signify our old successor that it's now a one-way
-            # relationship.
-            #
-            # If it's already a one-way relationship, just shut down the
-            # connection cleanly!
-            if self.predecessor:
-                oneway = chordnode.PeerState.ONEWAY
-                if self.predecessor and self.predecessor.state != oneway:
-                    self.predecessor.state = oneway
-                    notif = chordpkt.StateMessage.make_packet(self, oneway)
-                    self.processor.request(self.predecessor.peer_sock, notif,
-                                           None, wait_time=0)   # one-off
-                else:
-                    self.processor.shutdown_socket(self.predecessor.peer_sock)
-
             self.predecessor = self.create_peer(node.hash, node.chord_addr,
                                                 socket=sock)
             self.predecessor.predecessor = node.predecessor
@@ -316,10 +310,6 @@ class LocalNode(chordnode.ChordNode):
         response = chordpkt.NotifyResponse.unpack(msg.data)
         node = self._peerlist_contains(sock)
         if not node: return False
-
-        if response.set_pred:
-            node.state = chordnode.PeerState.ONEWAY
-
         return True
 
     def on_info_request(self, sock, msg):
@@ -419,9 +409,6 @@ class LocalNode(chordnode.ChordNode):
             #   - We still need the connection between A <--> B, because B is
             #     A's successor, despite not being our successor anymore.
             sp = self.successor.predecessor
-            if sp.hash != self.hash:    # implies a one-way connection
-                self.processor.shutdown_socket(self.successor.peer_sock)
-
             self.successor = self.create_peer(sp.hash, sp.chord_addr)
 
         # We need to notify our successor about ourselves (regardless of whether
@@ -430,27 +417,7 @@ class LocalNode(chordnode.ChordNode):
         request = chordpkt.NotifyRequest.make_packet(self, self.predecessor,
                                                      self.successor)
         self.processor.request(self.successor.peer_sock, request,
-                               self.on_notify_response, wait_time=0)
-
-    def on_state_change(self, sock, msg):
-        """ Processes a state change from a peer, usually to being one-way.
-        """
-        update = chordpkt.StateMessage.unpack(msg.data)
-        peer = self._peerlist_contains(sock)
-        if not peer:
-            L.warning("Received a message from an unknown peer.")
-            L.warning("  From: %s", update.sender)
-            L.warning("  State: %d", update.state)
-            return False
-
-        old_state  = peer.state
-        peer.state = chordnode.PeerState(update.state)
-
-        # If a peer has a one-way state, and it's neither a predecessor or a
-        # successor in this peer, we can get rid of it.
-        if old_state  == chordnode.PeerState.ONEWAY and \
-           peer.state == chordnode.PeerState.ONEWAY:
-            self.remove_peer(peer)
+                               None, wait_time=0)
 
     def process(self, peer_socket, msg):
         L.debug("Received message %s from %s:%d", repr(msg),
@@ -460,7 +427,7 @@ class LocalNode(chordnode.ChordNode):
             packetlib.MessageType.MSG_CH_JOIN:      (self.on_join_request,   0),
             packetlib.MessageType.MSG_CH_INFO:      (self.on_info_request,   0),
             packetlib.MessageType.MSG_CH_NOTIFY:    (self.on_notify_request, 0),
-            packetlib.MessageType.MSG_CH_STATE:     (self.on_state_change,   0),
+            packetlib.MessageType.MSG_CH_PING:      (self.heartbeat.on_ping, 0),
             # packetlib.MessageType.MSG_CH_LOOKUP:    self.on_lookup_request,
         }
 
@@ -534,13 +501,16 @@ class LocalNode(chordnode.ChordNode):
         # TODO: Successor lists for backup successors and routing tables for
         #       predecessor lookups!
         #
+        self.on_remove(self, node)
 
         if self.successor and node == self.successor:
-            L.warning("Lost our successor! (we are %s)", self)
+            print "Lost our successor! (we are %s)" % self
+            L.critical("Lost our successor! (we are %s)", self)
             self.successor = None
 
         if self.predecessor and node == self.predecessor:
-            L.warning("Lost our predecessor! (we are %s)", self)
+            print "Lost our predecessor! (we are %s)" % self
+            L.critical("Lost our predecessor! (we are %s)", self)
             self.predecessor = None
 
         self.peers.remove(node)
@@ -552,7 +522,7 @@ class LocalNode(chordnode.ChordNode):
         self.processor.add_socket(sock, self.process)
 
     def __str__(self):
-        return "[%s<-local(%s:%d|hash=%d|peers=%d)->%s]" % (
+        return "[%s<-local(%s|peers=%d)->%s]" % (
             str(int(self.predecessor.hash)) if self.predecessor else None,
-            self.chord_addr[0], self.chord_addr[1], self.hash, len(self.peers),
+            self.compact, len(self.peers),
             str(int(self.successor.hash))   if self.successor   else None)

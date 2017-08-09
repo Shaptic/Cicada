@@ -6,12 +6,14 @@ peers are `RemoteNode` instances which actually correspond to the respective
 machine).
 """
 
+import time
 import select
 import socket
 
-from chordlib import commlib
-from chordlib import chordnode, L
-from chordlib import routing
+from chordlib  import commlib
+from chordlib  import chordnode, L
+from chordlib  import routing
+from packetlib import chord as chordpkt
 
 class RemoteNode(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
@@ -43,29 +45,30 @@ class RemoteNode(chordnode.ChordNode):
             s.connect(listener_addr)
             L.debug("Socket handle: %d", s.fileno())
 
-
-        self.peer_sock = s
-        self.oneway = False     # set when, if A <--> B initially, state becomes
-                                # A.successor != B.predecessor
-
         if node_hash is None:   # not set for peer on first join
             h = routing.Hash(value="notset")
         else:
             h = routing.Hash(hashed=node_hash)
 
+        self.peer_sock = s
+        self.last_ping = chordpkt.PongMessage(h, 1000)
+
         super(RemoteNode, self).__init__(h, listener_addr)
         L.info("Created a remote peer with hash %d on %s:%d.",
                self.hash, self.chord_addr[0], self.chord_addr[1])
-
-        self.state = chordnode.PeerState.OPEN
 
     def __str__(self):
         try:
             remote = self.peer_sock.getpeername()
         except socket.error:    # closed connection
             remote = ("0", 0)
-        return "[%s<-remote@%s:%d(%s:%d|hash=%d)->%s]" % (
+        return "[%s<-remote@%s:%d(%s)->%s]" % (
             str(int(self.predecessor.hash)) if self.predecessor else None,
-            remote[0], remote[1], self.chord_addr[0], self.chord_addr[1],
-            self.hash,
+            remote[0], remote[1], self.compact,
             str(int(self.successor.hash))   if self.successor   else None)
+
+    @property
+    def is_alive(self):
+        """ Alive: received a PONG within the last 60 seconds.
+        """
+        return self.last_ping.time + 60 >= time.time()
