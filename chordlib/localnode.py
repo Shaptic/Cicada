@@ -7,6 +7,8 @@ method), or simply by waiting for a peer to join this ring.
 
 import collections
 import threading
+import functools
+import logging
 import socket
 import select
 import random
@@ -20,6 +22,7 @@ from chordlib import heartbeat
 from chordlib import chordnode
 from chordlib import remotenode
 
+import chordlib
 import packetlib
 import packetlib.debug
 from   packetlib import message
@@ -106,7 +109,6 @@ class LocalNode(chordnode.ChordNode):
         # This thread periodically purges the peerlist of dead peers that
         # haven't responded to our PINGs.
         self.heartbeat = heartbeat.HeartbeatManager(self.peers, self)
-        self.heartbeat.start()
 
         # This thread periodically performs the stabilization algorithm. It is
         # not started until a JOIN request is sent or received.
@@ -236,6 +238,7 @@ class LocalNode(chordnode.ChordNode):
 
         if not self.stable.is_alive():
             self.stable.start()
+            self.heartbeat.start()
 
         self.processor.response(sock, response)
         return response
@@ -276,6 +279,7 @@ class LocalNode(chordnode.ChordNode):
         self.successor.predecessor = response.predecessor
         self.successor.successor = response.successor
         self.stable.start()
+        self.heartbeat.start()
         return True
 
     def on_notify_request(self, sock, msg):
@@ -358,6 +362,65 @@ class LocalNode(chordnode.ChordNode):
         node.successor = response.successor
         return node
 
+    def lookup(self, address=None, hash=None, timeout=10):
+        if address == hash:
+            raise ValueError("expected one of: address, hash; got both/none")
+
+        if address is not None and \
+           not isinstance(address, tuple) or len(address) != 2 or \
+           not isinstance(address[1], int):
+            raise ValueError("expected addr=(host, port), got %s" % address)
+
+        if hash is not None and \
+           not isinstance(hash, routing.Hash):
+            raise ValueError("expected hash=Hash, got %s" % type(hash))
+
+        if address: hash = routing.Hash(value="%s:%d" % address)
+        request = chordpkt.LookupRequest.make_packet(self.hash, hash)
+        response = self.processor.request(self.succesor, request,
+                                          self.on_lookup_response,
+                                          wait_time=timeout)
+
+        L.info("Lookup for %s resulted in: %s", address or hash, response)
+        L.info("  Lookup result listening on: %s:%d", *response.listener)
+        return response
+
+    def on_lookup_request(self, sock, msg):
+        """ Forwards to next closest node or looks up request.
+        """
+        request = chordpkt.LookupRequest.unpack(msg.data)
+        if request.lookup == self.hash:
+            response = chordpkt.LookupResponse.make_packet(self.hash,
+                                                           request.lookup,
+                                                           self.hash,
+                                                           self.chord_addr)
+            self.processor.response(sock, response)
+
+        # Forward to the next closest node.
+        else:
+            def respond(original, responder, reply):
+                response = chordpkt.LookupResponse.unpack(reply.data)
+                response = chordpkt.LookupResponse.make_packet(self.hash,
+                    response.lookup, response.mapped, response.listener,
+                    hops=response.hops + 1) # change sender, increment hop count
+
+                self.processor.response(original, response)
+
+            distances = []
+            PeerDist = collections.namedtuple("PeerDist", "peer dist")
+            for peer in self.peers:
+                dist = routing.moddist(int(request.lookup), int(peer.hash),
+                                       routing.HASHMOD)
+                distances.append(PeerDist(peer, dist))
+
+            nearest = min(distances, key=lambda x: x.dist)
+            self.processor.request(nearest.peer, request,
+                                   functools.partial(respond, sock),
+                                   wait_time=0)
+
+    def on_lookup_response(self, sock, msg):
+        return chordpkt.LookupResponse.unpack(msg.data)
+
     def stabilize(self):
         """ Runs the stabilization algorithm.
 
@@ -427,8 +490,8 @@ class LocalNode(chordnode.ChordNode):
             packetlib.MessageType.MSG_CH_JOIN:      (self.on_join_request,   0),
             packetlib.MessageType.MSG_CH_INFO:      (self.on_info_request,   0),
             packetlib.MessageType.MSG_CH_NOTIFY:    (self.on_notify_request, 0),
+            packetlib.MessageType.MSG_CH_LOOKUP:    (self.on_lookup_request, 0),
             packetlib.MessageType.MSG_CH_PING:      (self.heartbeat.on_ping, 0),
-            # packetlib.MessageType.MSG_CH_LOOKUP:    self.on_lookup_request,
         }
 
         for msg_type, params in handlers.iteritems():

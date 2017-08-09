@@ -24,7 +24,7 @@ create [address]
 join [node] [address|node]
     On the provided [node], joins an existing Chord ring on the given address.
 
-lookup [address]
+lookup [node] [address]
     Performs a full route lookup on an address.
 
 stop [node]
@@ -147,9 +147,9 @@ def on_lookup(node, address):
     if not root: return
 
     print "Lookup up %s:%d..." % address
-    msg = chordpkt.LookupRequest.make_packet(
-        root.hash, fng.Hash(hashed=fng.chord_hash("%s:%d" % address)))
-    # root.
+    result = root.lookup(address=address)
+    print result
+    print result.listener
 
     return True
 

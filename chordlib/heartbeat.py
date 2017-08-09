@@ -1,6 +1,7 @@
 #!/usr/bin/python2
 
 import random
+import functools
 from   chordlib  import commlib, L
 from   packetlib import chord   as chordpkt
 from   packetlib import message
@@ -29,8 +30,8 @@ class HeartbeatManager(object):
                 msg = message.MessageContainer(ping.TYPE, data=ping.pack())
 
                 L.info("Sending a PING with message %d.", ping.value)
-                handlr = lambda s, m: self.on_pong(ping.value, s, m)
-                self.processor.request(peer.peer_sock, msg, handlr, wait_time=0)
+                handler = functools.partial(self.on_pong, ping.value)
+                self.processor.request(peer.peer_sock, msg, handler, wait_time=0)
 
         def on_pong(self, ping_value, socket, message):
             """ Validates a PONG value to an initial PING.
@@ -40,6 +41,7 @@ class HeartbeatManager(object):
                    pong.value, ping_value)
 
             if pong.value != ping_value:
+                import pdb; pdb.set_trace()
                 L.warning("Received an invalid PONG response.")
                 return False
 
@@ -62,16 +64,6 @@ class HeartbeatManager(object):
         def _loop_method(self):
             to_remove = set()
             map(to_remove.add, filter(lambda x: not x.is_alive, self.peerlist))
-            if to_remove:
-                from pprint import pprint
-                import time
-                print "Timed out peers:"
-                for item in to_remove:
-                    print item
-                    print time.time()
-                    print item.last_ping.time
-                    print
-
             map(self.parent.remove_peer, to_remove)
 
 

@@ -439,8 +439,8 @@ class SocketProcessor(InfiniteThread):
             raise ValueError("The request cannot be prepared on this socket.")
 
         if wait_time == 0:
-            L.warning("Triggered fire & forget event, response will be called "
-                      "on a different thread.")
+            L.debug("Triggered fire & forget event, response will be called "
+                    "on a different thread.")
             return False
 
         entry = self.sockets[peer]

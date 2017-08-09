@@ -158,8 +158,10 @@ for peer in connected:
     else:
         print "    PASSED!"
 
+raw_input("waiting for input...")
 for peer in peers:
     peer.processor.stop_running()
     peer.listen_thread.stop_running()
     peer.stable.stop_running()
     peer.listener.close()
+
