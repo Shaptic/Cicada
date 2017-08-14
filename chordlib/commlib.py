@@ -410,12 +410,10 @@ class SocketProcessor(InfiniteThread):
             exist), this will throw a `ValueError`.
         """
         if not isinstance(peer, ThreadsafeSocket):
-            raise TypeError("expected a raw (threadsafe) socket, got %s" % (
-                str(type(peer))))
+            raise TypeError("expected a threadsafe socket, got %s" % type(peer))
 
         if not isinstance(msg, message.MessageContainer):
-            raise TypeError("expected a MessageContainer, got %s" % (
-                str(type(msg))))
+            raise TypeError("expected a MessageContainer, got %s" % type(msg))
 
         if msg.is_response:
             raise ValueError("expected a request, got `msg.is_response`.")
@@ -460,7 +458,7 @@ class SocketProcessor(InfiniteThread):
             return False
 
         L.debug("Received response for message: %s", repr(result))
-        return on_response(peer, result) if on_response else True
+        return on_response(peer, result) if on_response else result
 
     def _loop_method(self):
         """ Reads the sockets periodically and calls request handlers.
@@ -476,6 +474,7 @@ class SocketProcessor(InfiniteThread):
             self.on_error(sock)
 
         for sock in readers:
+            L.debug("loop")
             try:
                 data = sock.recv(message.MessageContainer.MIN_MESSAGE_LEN)
                 if not data:

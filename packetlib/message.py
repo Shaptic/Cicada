@@ -6,6 +6,7 @@ import md5
 import uuid
 import enum
 import struct
+import hashlib
 import collections
 
 from packetlib.errors import ExceptionType
@@ -83,6 +84,8 @@ class MessageContainer(object):
             ("h",    "message type"),
             ("?",    "response indication"),
             ("I",    "sequence number"),
+            ("I",    "optional features"),
+            # ("64s",  "security hash-chain"),
             ("16s",  "checksum"),
             ("I",    "payload length, P"),
         ]),
@@ -123,10 +126,15 @@ class MessageContainer(object):
         :original   the message being responded to, which indicates that this is
                     a response message
         """
+        for value, t in ((msg_type, int), (data, str), (sequence, int)):
+            if not isinstance(value, t):
+                raise ValueError("expected %s, got %s" % (t, type(value)))
+
         self.type = msg_type
         self.data = data
-        self.seq  = sequence
+        self.seq = sequence
         self.original = original
+        # self.source_listener = src_addr
 
     def pack(self):
         """ Packs the packet into a binary format for transfer.
@@ -135,9 +143,10 @@ class MessageContainer(object):
             '!' + self.FORMATS[MessageBlob.MSG_HEADER],
             self.protocol,
             self.VERSION,
-            self.msg_type,
+            self.type,
             self.is_response,
-            self.seq,
+            self.seq, 0,
+            # self.security_hash,
             '\x00' * 16,
             len(self.data))
 
@@ -211,11 +220,14 @@ class MessageContainer(object):
             raise UnpackException(ExceptionType.EXC_WRONG_VERSION, version)
 
         # TODO: Ensure type matches protocol.
-        msgtype,   offset = get(2)
-        is_resp,   offset = get(3)
-        seq_no,    offset = get(4)
-        checksum,  offset = get(5)
-        payload_sz,offset = get(6)
+        i = 2
+        msgtype,   offset = get(i); i += 1
+        is_resp,   offset = get(i); i += 1
+        seq_no,    offset = get(i); i += 1
+        features,  offset = get(i); i += 1
+        # hashval,   offset = get(i); i += 1
+        checksum,  offset = get(i); i += 1
+        payload_sz,offset = get(i)
 
         resp = None
         data_offset = cls.HEADER_LEN
@@ -250,7 +262,10 @@ class MessageContainer(object):
             packet[data_offset : data_offset + payload_sz])
 
         cicada = MessageContainer(msgtype, data=data, sequence=seq_no,
-                                           original=resp)
+                                  original=resp)
+
+        # if cicada.security_hash != hashval:
+        #     L.warning(EXCEPTION_STRINGS[ExceptionType.EXC_BAD_HASH])
 
         # Checksum validation.
         fake_packet = MessageContainer._inject_checksum(packet, '\x00' * 16)
@@ -314,11 +329,17 @@ class MessageContainer(object):
 
     @property
     def msg_type(self):
-        return self.type
+        return MessageType.LOOKUP[self.type]
 
     @property
     def is_response(self):
         return self.original is not None
+
+    @property
+    def security_hash(self):
+        data_hash = hashlib.sha512(self.data).digest()
+        send_hash = hashlib.sha512("%s:%d" % self.source_listener).digest()
+        return hashlib.sha512(data_hash + send_hash).digest()
 
     @staticmethod
     def extract_chunk(fmt, data, i, keep_chunks=False):
@@ -385,18 +406,9 @@ class BaseMessage(object):
     RAW_FORMAT = []
     RESPONSE = False
 
-    def __init__(self, msg_type):
-        self.type = msg_type
-
-    def pack(self): return ""
-
     @classmethod
-    def unpack(cls, pkt):
-        # Validate data length.
-        if len(pkt) < cls.MESSAGE_SIZE:
-            print len(pkt), "too short, need >=", cls.MESSAGE_SIZE
-
-        return BaseMessage()
+    def unpack(cls, pkt): raise NotImplemented
+    def pack(self):       return ""
 
     @classmethod
     def make_packet(cls, *args, **kwargs):
@@ -410,13 +422,23 @@ class BaseMessage(object):
 
         return MessageContainer(cls.TYPE, data=cls(*args).pack(), **kwargs)
 
-    @property
-    def msg_type(self):
-        return self.type
 
-    @property
-    def msg_type_str(self):
-        return MessageType.LOOKUP[self.msg_type]
+class SecureMessage(BaseMessage):
+    """ Base class for hash-chained messages.
+
+    We ensure authenticity of messages by creating a tiny Merkle-tree:
+
+                authenticity hash
+                  /            \
+                 /              \
+        sender listener       message
+            address            hash
+
+    TODO: Figure the hell out how you can actually ensure authenticity.
+    """
+    __metaclass__ = FormatMetaclass
+    RAW_FORMAT = []
+    pass
 
 
 EXCEPTION_STRINGS = {
@@ -442,4 +464,5 @@ EXCEPTION_STRINGS = {
     ExceptionType.EXC_WRONG_LENGTH: \
         "Incorrect packet length! Expected %d bytes, got %d bytes.",
     ExceptionType.EXC_BAD_CHECKSUM: "Invalid packet checksum!",
+    ExceptionType.EXC_BAD_HASH: "Invalid security hash -- might be modified!",
 }

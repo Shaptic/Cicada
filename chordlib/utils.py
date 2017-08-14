@@ -41,6 +41,10 @@ class LockedSet(object):
         with self.setlock:
             self.set.remove(item)
 
+    def difference(self, other):
+        with self.setlock:
+            return self.set.difference(other)
+
     def __iter__(self):
         with self.setlock:
             for item in self.set:

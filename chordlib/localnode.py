@@ -30,6 +30,21 @@ from   packetlib import chord as chordpkt
 from   packetlib import utils as pktutils
 
 
+def handle_failed_request(fn):
+    """ Protects against cancelled requests.
+
+    If peer shuts down with pending requests, the handler is called with a
+    `None` message. Here, we validate against that, returning `False` if needed.
+    """
+    def wrapper(self, sock, msg):
+        if msg is None:
+            L.warning("INFO request failed to get response because the "
+                      "socket went down.")
+            return False    # socket went down prior
+        return fn(self, sock, msg)
+    return wrapper
+
+
 class LocalNode(chordnode.ChordNode):
     """ Represents the current local peer in the Chord network.
 
@@ -92,11 +107,6 @@ class LocalNode(chordnode.ChordNode):
                                                     self.on_new_peer)
         self.listen_thread.start()
 
-        # This is a thread that processes all of the known peers for messages
-        # and calls the appropriate message handler.
-        self.processor = commlib.SocketProcessor(self.on_shutdown,
-                                                 self.on_error)
-        self.processor.start()
         self.peers = chutils.LockedSet()
         self.data = data
         self.on_remove = lambda *args: None
@@ -105,6 +115,12 @@ class LocalNode(chordnode.ChordNode):
                                         self.listener.getsockname())
         L.info("Created local peer with hash %d on %s:%d.",
                self.hash, self.chord_addr[0], self.chord_addr[1])
+
+        # This is a thread that processes all of the known peers for messages
+        # and calls the appropriate message handler.
+        self.processor = commlib.SocketProcessor(self.on_shutdown,
+                                                 self.on_error)
+        self.processor.start()
 
         # This thread periodically purges the peerlist of dead peers that
         # haven't responded to our PINGs.
@@ -196,57 +212,49 @@ class LocalNode(chordnode.ChordNode):
 
         req = chordpkt.JoinRequest.unpack(msg.data)
 
+        L.info("Allowing connection and responding with our details:")
+        L.info("    We are: %s", self)
+        L.info("    Our predecessor: %s", self.predecessor)
+        L.info("    Our successor: %s", self.successor)
+        L.info("    The peer's hash is: %d", req.sender)
+
         # We were alone, and now we have a friend.
         if self.successor is None:
-            lookup_successor = self
             self.successor = self.create_peer(req.sender, req.listener,
                                               socket=sock)
+            response = chordpkt.JoinResponse.make_packet(self, self,
+                                                         self.predecessor,
+                                                         self.successor,
+                                                         original=msg)
+            self.processor.response(sock, response)
+            return response
 
         # Look up the successor locally. The successor of the requestor peer
         # belongs in the range (peer.hash, successor.hash].
-        #
-        # TODO: Look up the successor over the network. Or do we just refer to
-        #       the finger table and let the node optimize itself?
         else:
-            L.critical("Successor needs to be looked up in the network.")
-            ndist = collections.namedtuple("NodeDist", "node dist")
-            cmps = [ndist(self, 0), ndist(self.successor, 0)]
-            if self.predecessor: cmps.append(ndist(self.successor, 0))
+            def handler(sock, orig, result, msg):
+                response = chordpkt.JoinResponse.make_packet(result, self,
+                                                             self.predecessor,
+                                                             self.successor,
+                                                             original=orig)
+                self.processor.response(sock, response)
 
-            for idx, i in enumerate(cmps):
-                cmps[idx] = i._replace(dist=routing.moddist(int(req.sender),
-                                                            int(i.node.hash),
-                                                            routing.HASHMOD))
+            L.info("We need to make a remote lookup to make a good "
+                   "successor recommendation.")
 
-            lookup_successor = min(cmps, key=lambda x: x.dist).node
+            handler(sock, msg, self._find_closest_peer(req.sender), None)
+            return True
 
-        L.info("Allowing connection and responding with our details:")
-        L.info("    Our hash: %d", self.hash)
-        L.info("    Our successor hash: %d on %s:%d", self.successor.hash,
-               *self.successor.chord_addr)
-        L.info("    Our predecessor hash: %d on %s",
-               0 if not self.predecessor else self.predecessor.hash,
-               "n/a" if not self.predecessor else (
-                    "%s:%d" % self.predecessor.chord_addr))
-        L.info("    Requestee successor hash: %d on %s:%d",
-               lookup_successor.hash, *lookup_successor.chord_addr)
+            peer = self._peerlist_contains(sock)
+            self.lookup(req.sender, functools.partial(handler, sock, msg), 0,
+                        requestor=peer)
+            return True
 
-        response = chordpkt.JoinResponse.make_packet(lookup_successor, self,
-                                                     self.predecessor,
-                                                     self.successor,
-                                                     original=msg)
 
-        if not self.stable.is_alive():
-            self.stable.start()
-            self.heartbeat.start()
-
-        self.processor.response(sock, response)
-        return response
-
+    @handle_failed_request
     def on_join_response(self, sock, msg):
         """ Processes a JOIN response and creates the successor connection.
         """
-        if msg is None: return False    # socket went down prior
         response = chordpkt.JoinResponse.unpack(msg.data)
 
         L.info("We have been permitted to join the network:")
@@ -310,6 +318,7 @@ class LocalNode(chordnode.ChordNode):
         self.processor.response(sock, response)
         return response
 
+    @handle_failed_request
     def on_notify_response(self, sock, msg):
         response = chordpkt.NotifyResponse.unpack(msg.data)
         node = self._peerlist_contains(sock)
@@ -339,14 +348,10 @@ class LocalNode(chordnode.ChordNode):
         self.processor.response(sock, response)
         return True
 
+    @handle_failed_request
     def on_info_response(self, sock, msg):
-        """ Processes a peer's information from an INFO response.
+        """ Updates (or creates) a peer with up-to-date properties.
         """
-        if msg is None:
-            L.warning("INFO request failed to get response because the "
-                      "socket went down.")
-            return False    # socket went down prior
-
         response = chordpkt.InfoResponse.unpack(msg.data)
         node = self._peerlist_contains(sock)
         if not node:
@@ -362,64 +367,95 @@ class LocalNode(chordnode.ChordNode):
         node.successor = response.successor
         return node
 
-    def lookup(self, address=None, hash=None, timeout=10):
-        if address == hash:
-            raise ValueError("expected one of: address, hash; got both/none")
-
-        if address is not None and \
-           not isinstance(address, tuple) or len(address) != 2 or \
-           not isinstance(address[1], int):
-            raise ValueError("expected addr=(host, port), got %s" % address)
-
-        if hash is not None and \
-           not isinstance(hash, routing.Hash):
-            raise ValueError("expected hash=Hash, got %s" % type(hash))
-
-        if address: hash = routing.Hash(value="%s:%d" % address)
-        request = chordpkt.LookupRequest.make_packet(self.hash, hash)
-        response = self.processor.request(self.succesor, request,
-                                          self.on_lookup_response,
-                                          wait_time=timeout)
-
-        L.info("Lookup for %s resulted in: %s", address or hash, response)
-        L.info("  Lookup result listening on: %s:%d", *response.listener)
-        return response
-
     def on_lookup_request(self, sock, msg):
         """ Forwards to next closest node or looks up request.
         """
-        request = chordpkt.LookupRequest.unpack(msg.data)
-        if request.lookup == self.hash:
-            response = chordpkt.LookupResponse.make_packet(self.hash,
-                                                           request.lookup,
-                                                           self.hash,
-                                                           self.chord_addr)
-            self.processor.response(sock, response)
+        peer = self._peerlist_contains(sock)
+        req = chordpkt.LookupRequest.unpack(msg.data)
 
-        # Forward to the next closest node.
-        else:
-            def respond(original, responder, reply):
-                response = chordpkt.LookupResponse.unpack(reply.data)
-                response = chordpkt.LookupResponse.make_packet(self.hash,
-                    response.lookup, response.mapped, response.listener,
-                    hops=response.hops + 1) # change sender, increment hop count
+        def on_response(socket, request, value, result, response):
+            """ A specialized handler to route the lookup response packet.
+            """
+            if response is None:
+                L.warning("Failed to receive a response for our lookup.")
+                L.info("Using ourselves as the response.")
+                response = chordpkt.LookupResponse.make_packet(
+                    self.hash, value, self.hash, self.chord_addr,
+                    original=request)
+                self.processor.response(socket, response)
+                return
 
-                self.processor.response(original, response)
+            response = chordpkt.LookupResponse.unpack(response.data)
+            duplicate = chordpkt.LookupResponse.make_packet(
+                self.hash, response.lookup, response.mapped, response.listener,
+                hops=response.hops + 1, original=request)
 
-            distances = []
-            PeerDist = collections.namedtuple("PeerDist", "peer dist")
-            for peer in self.peers:
-                dist = routing.moddist(int(request.lookup), int(peer.hash),
-                                       routing.HASHMOD)
-                distances.append(PeerDist(peer, dist))
+            L.info("Received a response for our forwarded lookup request.")
+            L.info("  The resulting peer: %d on %s:%d", duplicate.lookup,
+                   *duplicate.mapped)
+            self.processor.response(socket, duplicate)
 
-            nearest = min(distances, key=lambda x: x.dist)
-            self.processor.request(nearest.peer, request,
-                                   functools.partial(respond, sock),
-                                   wait_time=0)
+        L.info("Received a lookup request from peer: %d", req.sender)
+        self.lookup(req.lookup,
+                    functools.partial(on_response, sock, msg, req.lookup), 0,
+                    requestor=peer)
 
-    def on_lookup_response(self, sock, msg):
-        return chordpkt.LookupResponse.unpack(msg.data)
+    def lookup(self, value, on_response, timeout, requestor=None):
+        """ Performs an asynchronous LOOKUP request on a certain value.
+
+        :value          a `Hash` value that we're looking up
+        :on_response    an asynchronously-called handler that will process
+                        the lookup result (if any), in the format:
+                            on_response(Peer, message)
+            where the `Peer` is the value that corresponds to the peer that is
+            responsible for the lookup value, and the `message` is the raw
+            `MessageContainer` object corresponding to the response we received
+            resolving this peer. If the response was resolved locally, this is
+            set to `None`.
+        :timeout        in seconds, the amount of time to wait for the response
+        """
+        def on_lookup_response(secondary_handler, response_socket,
+                               response_message):
+            """ The internal wrapper handler for processing a LOOKUP response.
+            """
+            if response_message is None:
+                secondary_handler(None, None)
+                return False
+
+            r = chordpkt.LookupResponse.unpack(response_message.data)
+
+            L.info("  Got a response for the lookup value %d.", r.lookup)
+            L.info("  The responder was: %d", r.sender)
+            L.info("  The lookup result: %d on %s:%d", r.mapped, *r.listener)
+            L.debug("    took %d hops.", r.hops)
+
+            result = chordnode.ChordNode(r.mapped, r.listener)
+            secondary_handler(result, r)
+            return True
+
+        L.info("Peer %s is looking up the value %d.", self, value)
+
+        # First, is this our responsibility?
+        pred = self.predecessor or self.successor
+        iv = routing.Interval(int(pred.hash), int(self.hash), routing.HASHMOD)
+        if iv.within_open(int(value)) or value == self.hash:
+            L.info("  %d falls into our interval, (%d, %d].", value,
+                   pred.hash, self.hash)
+            return on_response(self, None)
+
+        # If it's not us, find the closest hop we know of.
+        # exclusion = set((requestor,)) if requestor else set()
+        # nearest = self._find_closest_peer(value, exclude=exclusion)
+        nearest = self.successor
+
+        L.info("  Forwarding lookup to the nearest neighbor we're aware of:")
+        L.info("    Nearest neighbor: %s", nearest)
+
+        request = chordpkt.LookupRequest.make_packet(self.hash, value)
+        self.processor.request(nearest.peer_sock, request,
+                               functools.partial(on_lookup_response,
+                                                 on_response),
+                               wait_time=timeout)
 
     def stabilize(self):
         """ Runs the stabilization algorithm.
@@ -443,8 +479,10 @@ class LocalNode(chordnode.ChordNode):
                 L.error("on_info_response failed.")
                 return
 
-        except ValueError:
+        except ValueError, e:
             L.warning("The successor socket went down during stabilization.")
+            L.warning("Exception: %s", str(e))
+            L.error("Shouldn't self.successor be None at this point...?")
             return
 
         # It's possible that the successor hasn't stabilized yet, and thus
@@ -583,6 +621,53 @@ class LocalNode(chordnode.ChordNode):
         """
         L.debug("New peer from %s:%d", *address)
         self.processor.add_socket(sock, self.process)
+
+    def _find_closest_peer_moddist(self, value, exclude=set()):
+        """ Finds the closest known peer to a value using modular distance.
+
+        NOTE: This uses `LockedSet.difference`, which returns a _regular set_.
+              As such, it is _not threadsafe_. The returned set will not change
+              through the runtime of this method, but it _may not_ guarantee
+              that the resulting peer is actually alive and exists.
+              Specifically,
+
+                peers_before = set(self.peers)
+                p = self._find_closest_peer_moddist(value)
+                p in peers_before   # True
+                peers_after = set(self.peers)
+                p in peers_after    # True | False
+
+              As such, you should beware of the validity of the returned peer.
+        """
+        if isinstance(value, routing.Hash): value = int(value)
+        if not isinstance(value, int):
+            raise TypeError("expected int, got %s" % type(value))
+
+        table = []  # [ (peer, distance) ]
+        for peer in self.peers.difference(exclude):
+            dist = routing.moddist(value, int(peer.hash), routing.HASHMOD)
+            table.append((peer, dist))
+
+        near = min(table, key=lambda x: x[1])
+        return near[0]
+
+    def _find_closest_peer(self, value, exclude=set()):
+        """ Finds the closest known peer responsible for a value.
+
+        Each peer is responsible (as far as we're concerned) for the values in
+        the range: (peer.predecessor.hash, peer.hash]. Thus, the peer that has
+        the value fall into that range is the closest one we know.
+
+        If a peer doesn't have a predecessor (as far as _they_ know), we can
+        fake one for them by finding their predecessor in _our_ peer table.
+        """
+        for peer in self.peers.difference(exclude):
+            pred = self.predecessor or self._find_closest_peer_moddist(value)
+            iv = routing.Interval(int(pred.hash), int(peer.hash))
+            if iv.within_open(value) or iv.end == value:    # (start, end]
+                return peer
+
+        return self._find_closest_peer_moddist(value, exclude)
 
     def __str__(self):
         return "[%s<-local(%s|peers=%d)->%s]" % (

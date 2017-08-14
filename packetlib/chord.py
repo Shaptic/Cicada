@@ -146,9 +146,6 @@ class InfoRequest(message.BaseMessage):
     RAW_FORMAT = []
     TYPE = message.MessageType.MSG_CH_INFO
 
-    def __init__(self):
-        super(InfoRequest, self).__init__(self.TYPE)
-
 
 class InfoResponse(message.BaseMessage):
     RAW_FORMAT = [ PackedNode.EMBED_FORMAT ]
@@ -162,8 +159,6 @@ class InfoResponse(message.BaseMessage):
         :pred       the peer's predecessor node
         :succ       the peer's successor node
         """
-        super(InfoResponse, self).__init__(self.TYPE)
-
         if any([not isinstance(x, chordnode.ChordNode) and x is not None \
                 for x in (sender, pred, succ)]):
             raise TypeError("expected ChordNode's, got %s" % repr([
@@ -201,8 +196,6 @@ class JoinRequest(message.BaseMessage):
     def __init__(self, sender_hash, listener_addr):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
-
-        super(JoinRequest, self).__init__(self.TYPE)
 
         self.sender = sender_hash
         self.listener = listener_addr
@@ -284,7 +277,6 @@ class NotifyResponse(message.BaseMessage):
     RESPONSE = True
 
     def __init__(self, set_predecessor):
-        super(NotifyResponse, self).__init__(self.TYPE)
         self.set_pred = set_predecessor
 
     def pack(self):

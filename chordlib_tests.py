@@ -8,6 +8,7 @@ print "len=%d" % len(n.pack()); print
 n.dump()
 print
 D.dump_packet(n.pack(), n.full_format())
+assert n.pack() == n.unpack(n.pack()).pack()
 
 import sys
 import random
@@ -152,6 +153,14 @@ for peer in connected:
     ]
 
     expected_successor = min(network, key=lambda x: x.dist).node
+
+    # Validate the distance algorithm, too.
+    calc_successor = peer._find_closest_peer_moddist(int(peer.hash))
+    if expected_successor.hash != calc_successor.hash:
+        print "    Calculation algorithm FAILED!"
+        print "    Expected %s, got %s." % (expected_successor, calc_successor)
+        print "    For the peer", peer
+
     if not peer.successor or expected_successor.hash != peer.successor.hash:
         print "    FAILED! Expected %d, got %d: %s" % (expected_successor.hash,
               peer.successor.hash if peer.successor else 0, peer)
@@ -159,6 +168,7 @@ for peer in connected:
         print "    PASSED!"
 
 raw_input("waiting for input...")
+
 for peer in peers:
     peer.processor.stop_running()
     peer.listen_thread.stop_running()
