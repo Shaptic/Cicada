@@ -256,7 +256,6 @@ class LocalNode(chordnode.ChordNode):
         if not self.stable.is_alive():
             self.stable.start()
             self.heartbeat.start()
-
         return retval
 
     @handle_failed_request
@@ -294,8 +293,10 @@ class LocalNode(chordnode.ChordNode):
 
         self.successor.predecessor = response.predecessor
         self.successor.successor = response.successor
-        self.stable.start()
-        self.heartbeat.start()
+
+        if not self.stable.is_alive():
+            self.stable.start()
+            self.heartbeat.start()
         return True
 
     def on_notify_request(self, sock, msg):

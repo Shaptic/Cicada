@@ -388,8 +388,8 @@ class SocketProcessor(InfiniteThread):
         L.debug("Sending response to message: %s", response)
         assert response.is_response, "expected response, got %s" % response
         if response.type != message.MessageType.MSG_CH_PONG:
-            self.logfile.write("outbound response, %d\n" % time.time())
-            self.logfile.write(repr(response) + "\n")
+            self.logfile.write("outbound response, %d, %s\n" % (
+                               time.time(), repr(response)))
             self.logfile.flush()
         return peer.sendall(response.pack())
 
@@ -437,8 +437,8 @@ class SocketProcessor(InfiniteThread):
                     here[0], here[1], there[0], there[1], msg)
             L.debug("    Sequence number: %d", msg.seq)
             if msg.type != message.MessageType.MSG_CH_PING:
-                self.logfile.write("outbound request, %d\n" % time.time())
-                self.logfile.write(repr(msg) + "\n")
+                self.logfile.write("outbound request,  %d, %s\n" % (
+                                   time.time(), repr(msg)))
                 self.logfile.flush()
             peer.sendall(msg.pack())
 
@@ -529,8 +529,8 @@ class SocketProcessor(InfiniteThread):
             while stream.queue.ready:
                 msg = stream.queue.pop()
                 L.debug("Full message received: %s", repr(msg))
-                self.logfile.write("inbound packet, %d\n" % time.time())
-                self.logfile.write(repr(msg) + "\n")
+                self.logfile.write("in-bound req/resp, %d, %s\n" % (
+                                   time.time(), repr(msg)))
                 self.logfile.flush()
 
                 #
