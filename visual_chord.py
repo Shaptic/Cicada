@@ -1,86 +1,25 @@
-#!/usr/bin/python2
+#!/usr/bin/env python2
 """ A visual respresentation of a Chord system.
 """
 
 import enum
 import math
 import random
+import argparse
 import threading
 
 import pygame
 
-from chordlib import localnode
-from chordlib import utils
+from chordlib   import localnode
+from chordlib   import utils
 
-# eventually eh
-TOPOLOGY = """ {
-    "peers": [
-    ]
-}
-"""
+from visualizer.window  import Window
+from visualizer.math    import Vector
 
 
 class DrawState(enum.Enum):
-    NORMAL    = 0x1
-    SELECTED  = 0x2
-
-
-class PeerState(enum.Enum):
     NORMAL   = 0x1
-
-
-class Vector(object):
-    """ A 2-dimensional position. """
-    def __init__(self, x, y=None):
-        if isinstance(x, tuple):
-            self.x, self.y = x
-        elif isinstance(x, Vector):
-            self.x = x.x
-            self.y = x.y
-        elif isinstance(x, pygame.Surface):
-            self.x = x.get_width()
-            self.y = x.get_height()
-        else:
-            self.x = x
-            self.y = y
-
-    @property
-    def w(self): return self.x
-
-    @property
-    def h(self): return self.y
-
-    @property
-    def t(self): return (self.x, self.y)
-
-    @property
-    def middle(self): return Vector(self.x / 2, self.y / 2)
-
-    def __repr__(self): return "<%d, %d>" % self.t
-
-
-class Window(object):
-    WIDTH  = 1400
-    HEIGHT = 1100
-
-    def __init__(self):
-        self.size = Vector(self.WIDTH, self.HEIGHT)
-        self.screen = pygame.display.set_mode(self.size.t)
-        pygame.display.set_caption("Cicada Simulator")
-
-    def fill(self, color=(255, 255, 255)):
-        self.screen.fill(color)
-
-    def blit(self, sprite, pos):
-        self.screen.blit(sprite, pos)
-
-    @staticmethod
-    def flip():
-        pygame.display.flip()
-
-    @property
-    def center(self):
-        return Vector(self.size.w / 2, self.size.h / 2)
+    SELECTED  = 0x2
 
 
 class VisualSprite(pygame.sprite.Sprite):
@@ -133,7 +72,6 @@ class VisualSprite(pygame.sprite.Sprite):
     def on_hover(self, window, x, y):
         lines = []
         for t in [
-            ("state=%s" % self.peer.state),
             ("peers=%d" % len(self.peer.peers)),
         ]:
             lines.append(FONT.render(t, True, (0, 0, 0)))
@@ -214,7 +152,6 @@ class VisualNode(localnode.LocalNode):
 
     def __init__(self, sprite, listener):
         super(VisualNode, self).__init__("%s:%d" % listener, listener)
-        self.state = PeerState.NORMAL
         self.sprite = sprite
         self.dots = pygame.sprite.Group()
 
@@ -330,10 +267,8 @@ if __name__ == "__main__":
                         else:
                             peer.deselect()
 
-        for peer in ring:
-            mouse = pygame.Rect(mouse_pos.x, mouse_pos.y, 1, 1)
-            if mouse.colliderect(peer.rect):
-                peer.on_hover(window, mouse.x, mouse.y)
+        peer = peer_at(ring, mouse_pos.x, mouse_pos.y)
+        if peer: peer.on_hover(window, mouse_pos.x, mouse_pos.y)
 
         ring.update(window)
         window.flip()
