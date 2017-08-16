@@ -31,7 +31,7 @@ class LockedSet(object):
     """
     def __init__(self):
         self.set = set()
-        self.setlock = threading.Lock()
+        self.setlock = threading.RLock()
 
     def add(self, item):
         with self.setlock:
@@ -49,6 +49,10 @@ class LockedSet(object):
         with self.setlock:
             for item in self.set:
                 yield item
+
+    def lockfree_iter(self):
+        for item in self.set:
+            yield item
 
     def __len__(self):
         with self.setlock:

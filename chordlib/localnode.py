@@ -630,6 +630,20 @@ class LocalNode(chordnode.ChordNode):
         L.debug("New peer from %s:%d", *address)
         self.processor.add_socket(sock, self.process)
 
+    # @chordnode.ChordNode.predecessor.getter
+    # def predecessor(self):
+    #     # Fall back to the closest preceding peer.
+    #     if self._predecessor is None and self.peers:
+    #         table = []  # [ (peer, distance) ]
+    #         for peer in self.peers.lockfree_iter():
+    #             dist = routing.moddist(int(peer.hash), int(self.hash),
+    #                                    routing.HASHMOD)
+    #             table.append((peer, dist))
+
+    #         return min(table, key=lambda x: x[1])[0]
+
+    #     return self._predecessor
+
     def _find_closest_peer_moddist(self, value, exclude=set()):
         """ Finds the closest known peer to a value using modular distance.
 
