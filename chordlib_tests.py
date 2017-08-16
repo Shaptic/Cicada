@@ -146,23 +146,13 @@ if len(all_loops) > 1:
 print "Performing network validation..."
 NodeDist = collections.namedtuple("NodeDist", "node dist")
 for peer in connected:
-    network = [
-        NodeDist(p, chordlib.routing.moddist(int(peer.hash), int(p.hash),
-                                             chordlib.routing.HASHMOD)) \
-        for p in connected if p != peer
-    ]
+    calc_successor = peer._find_closest_peer_moddist(int(peer.hash), set([peer]))
+    print "    For the peer", peer
+    print "      The calculated successor was", int(calc_successor.hash)
+    print "      The actual successor is", int(peer.successor.hash)
 
-    expected_successor = min(network, key=lambda x: x.dist).node
-
-    # Validate the distance algorithm, too.
-    calc_successor = peer._find_closest_peer_moddist(int(peer.hash))
-    if expected_successor.hash != calc_successor.hash:
-        print "    Calculation algorithm FAILED!"
-        print "    Expected %s, got %s." % (expected_successor, calc_successor)
-        print "    For the peer", peer
-
-    if not peer.successor or expected_successor.hash != peer.successor.hash:
-        print "    FAILED! Expected %d, got %d: %s" % (expected_successor.hash,
+    if not peer.successor or calc_successor.hash != peer.successor.hash:
+        print "    FAILED! Expected %d, got %d: %s" % (calc_successor.hash,
               peer.successor.hash if peer.successor else 0, peer)
     else:
         print "    PASSED!"

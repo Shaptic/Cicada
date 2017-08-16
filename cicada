@@ -63,8 +63,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     if args.listener.find(':') == -1:
-        print "Invalid address! Expected 'ip:port' passed in (see --help)."
-        sys.exit(0)
+        parser.error("Invalid address! Expected 'ip:port' for listener.")
 
     server = args.listener.split(':')
     server = (server[0], int(server[1]))
@@ -72,8 +71,7 @@ if __name__ == "__main__":
     client = None
     if args.join_address:
         if args.join_address.find(':') == -1:
-            print "Invalid address! Expected 'ip:port' passed in (see --help)."
-            sys.exit(0)
+            parser.error("Invalid address! Expected 'ip:port' for joiner.")
 
         client = args.join_address.split(':')
         client = (client[0], int(client[1]))

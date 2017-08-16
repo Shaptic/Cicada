@@ -118,7 +118,8 @@ class LocalNode(chordnode.ChordNode):
 
         # This is a thread that processes all of the known peers for messages
         # and calls the appropriate message handler.
-        self.processor = commlib.SocketProcessor(self.on_shutdown,
+        self.processor = commlib.SocketProcessor(self,
+                                                 self.on_shutdown,
                                                  self.on_error)
         self.processor.start()
 
@@ -227,7 +228,7 @@ class LocalNode(chordnode.ChordNode):
                                                          self.successor,
                                                          original=msg)
             self.processor.response(sock, response)
-            return response
+            retval = response
 
         # Look up the successor locally. The successor of the requestor peer
         # belongs in the range (peer.hash, successor.hash].
@@ -242,14 +243,21 @@ class LocalNode(chordnode.ChordNode):
             L.info("We need to make a remote lookup to make a good "
                    "successor recommendation.")
 
-            handler(sock, msg, self._find_closest_peer(req.sender), None)
+            handler(sock, msg,
+                    self._find_closest_peer_moddist(req.sender),
+                    None)
             return True
 
             peer = self._peerlist_contains(sock)
             self.lookup(req.sender, functools.partial(handler, sock, msg), 0,
                         requestor=peer)
-            return True
+            retval = True
 
+        if not self.stable.is_alive():
+            self.stable.start()
+            self.heartbeat.start()
+
+        return retval
 
     @handle_failed_request
     def on_join_response(self, sock, msg):
@@ -661,8 +669,8 @@ class LocalNode(chordnode.ChordNode):
         If a peer doesn't have a predecessor (as far as _they_ know), we can
         fake one for them by finding their predecessor in _our_ peer table.
         """
+        pred = self.predecessor or self._find_closest_peer_moddist(value)
         for peer in self.peers.difference(exclude):
-            pred = self.predecessor or self._find_closest_peer_moddist(value)
             iv = routing.Interval(int(pred.hash), int(peer.hash))
             if iv.within_open(value) or iv.end == value:    # (start, end]
                 return peer

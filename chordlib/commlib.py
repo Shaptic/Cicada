@@ -261,7 +261,7 @@ class SocketProcessor(InfiniteThread):
             pair.trigger(responder, None)
 
 
-    def __init__(self, on_shutdown, on_error):
+    def __init__(self, parent, on_shutdown, on_error):
         """ Creates a thread instance.
 
         This manages a set of sockets with particular _generic_ request handler
@@ -304,6 +304,7 @@ class SocketProcessor(InfiniteThread):
         self.sockets = {}   # dict -> { socket: MessageStream }
         self.on_shutdown = on_shutdown
         self.on_error = on_error
+        self.logfile = open("comms-%d.log" % int(parent.hash), "w")
 
     def add_socket(self, peer, on_request):
         """ Adds a new socket to manage.
@@ -386,6 +387,10 @@ class SocketProcessor(InfiniteThread):
         """
         L.debug("Sending response to message: %s", response)
         assert response.is_response, "expected response, got %s" % response
+        if response.type != message.MessageType.MSG_CH_PONG:
+            self.logfile.write("outbound response, %d\n" % time.time())
+            self.logfile.write(repr(response) + "\n")
+            self.logfile.flush()
         return peer.sendall(response.pack())
 
     def request(self, peer, msg, on_response, wait_time=None):
@@ -431,6 +436,10 @@ class SocketProcessor(InfiniteThread):
             L.debug("Sending message %s:%d -> %s:%d: %s",
                     here[0], here[1], there[0], there[1], msg)
             L.debug("    Sequence number: %d", msg.seq)
+            if msg.type != message.MessageType.MSG_CH_PING:
+                self.logfile.write("outbound request, %d\n" % time.time())
+                self.logfile.write(repr(msg) + "\n")
+                self.logfile.flush()
             peer.sendall(msg.pack())
 
         except socket.error:
@@ -520,6 +529,9 @@ class SocketProcessor(InfiniteThread):
             while stream.queue.ready:
                 msg = stream.queue.pop()
                 L.debug("Full message received: %s", repr(msg))
+                self.logfile.write("inbound packet, %d\n" % time.time())
+                self.logfile.write(repr(msg) + "\n")
+                self.logfile.flush()
 
                 #
                 # For responses (they include an "original" member), we call the
