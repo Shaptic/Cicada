@@ -14,22 +14,23 @@ from   packetlib import message
 class ThreadsafeSocket(object):
     """ Provides a thread-safe (and logged) interface into sockets.
     """
-
-    def __init__(self, existing_socket=None):
+    def __init__(self, send_hook, existing_socket=None):
         self.sendlock = threading.Lock()
         self.socket = existing_socket
+        self.on_send = send_hook
         if not self.socket:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def accept(self):
         sock, addr = self.socket.accept()
-        return ThreadsafeSocket(sock), addr
+        return ThreadsafeSocket(self.on_send, sock), addr
 
     def send(self, *args):
         raise NotImplemented("Use sendall()!")
 
     def sendall(self, bytestream):
         with self.sendlock:
+            self.on_send(self.socket, bytestream)
             self.socket.sendall(bytestream)
             L.debug("Sent %d bytes %s", len(bytestream), repr(bytestream))
 
@@ -305,6 +306,7 @@ class SocketProcessor(InfiniteThread):
         self.on_shutdown = on_shutdown
         self.on_error = on_error
         self.logfile = open("comms-%d.log" % int(parent.hash), "w")
+        self.parent = parent
 
     def add_socket(self, peer, on_request):
         """ Adds a new socket to manage.
@@ -388,8 +390,10 @@ class SocketProcessor(InfiniteThread):
         L.debug("Sending response to message: %s", response)
         assert response.is_response, "expected response, got %s" % response
         if response.type != message.MessageType.MSG_CH_PONG:
-            self.logfile.write("outbound response, %d, %s\n" % (
-                               time.time(), repr(response)))
+            self.logfile.write(">>> [resp] @ %d, %s:%s, %s\n" % (
+                               time.time(), peer.getsockname()[0],
+                               str(peer.getsockname()[1]).ljust(5),
+                               repr(response)))
             self.logfile.flush()
         return peer.sendall(response.pack())
 
@@ -437,8 +441,10 @@ class SocketProcessor(InfiniteThread):
                     here[0], here[1], there[0], there[1], msg)
             L.debug("    Sequence number: %d", msg.seq)
             if msg.type != message.MessageType.MSG_CH_PING:
-                self.logfile.write("outbound request,  %d, %s\n" % (
-                                   time.time(), repr(msg)))
+                self.logfile.write(">>> [reqt] @ %d, %s:%s, %s\n" % (
+                                   time.time(), peer.getsockname()[0],
+                                   str(peer.getsockname()[1]).ljust(5),
+                                   repr(msg)))
                 self.logfile.flush()
             peer.sendall(msg.pack())
 
@@ -528,10 +534,15 @@ class SocketProcessor(InfiniteThread):
 
             while stream.queue.ready:
                 msg = stream.queue.pop()
+
                 L.debug("Full message received: %s", repr(msg))
-                self.logfile.write("in-bound req/resp, %d, %s\n" % (
-                                   time.time(), repr(msg)))
-                self.logfile.flush()
+
+                if msg.type != message.MessageType.MSG_CH_PONG:
+                    self.logfile.write("<<< [mesg] @ %d, %s:%s, %s\n" % (
+                                       time.time(), sock.getsockname()[0],
+                                       str(sock.getsockname()[1]).ljust(5),
+                                       repr(msg)))
+                    self.logfile.flush()
 
                 #
                 # For responses (they include an "original" member), we call the

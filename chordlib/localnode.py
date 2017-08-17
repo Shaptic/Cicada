@@ -81,7 +81,7 @@ class LocalNode(chordnode.ChordNode):
           than waiting for the arbitrary stabilization routine.
     """
 
-    def __init__(self, data, bind_addr):
+    def __init__(self, data, bind_addr, on_send):
         """ Creates a node on a specific address with specific data.
 
         Typically, the data that you pass is simply a string representation of
@@ -95,7 +95,7 @@ class LocalNode(chordnode.ChordNode):
 
         # This socket is responsible for inbound connections (from new potential
         # Peer nodes). It is always in an "accept" state in a separate thread.
-        self.listener = commlib.ThreadsafeSocket()
+        self.listener = commlib.ThreadsafeSocket(on_send)
         self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener.bind(bind_addr)
         self.listener.listen(5)
@@ -110,6 +110,8 @@ class LocalNode(chordnode.ChordNode):
         self.peers = chutils.LockedSet()
         self.data = data
         self.on_remove = lambda *args: None
+        self.on_send = on_send
+        # self.on_recv = on_message_handler
 
         super(LocalNode, self).__init__(routing.Hash(value=data),
                                         self.listener.getsockname())
@@ -145,7 +147,7 @@ class LocalNode(chordnode.ChordNode):
             node = self._peerlist_contains(hash)
             if node: return node
 
-        peer = remotenode.RemoteNode(hash, address, existing_socket=socket)
+        peer = remotenode.RemoteNode(self.on_send, hash, address, existing_socket=socket)
         self.processor.add_socket(peer.peer_sock, self.process)
         self.peers.add(peer)
         return peer
@@ -199,6 +201,19 @@ class LocalNode(chordnode.ChordNode):
             raise ValueError("JOIN request didn't get a response in time.")
 
         return request, response
+
+    def leave_ring(self):
+        for peer in self.peers.lockfree_iter():
+            self.processor.shutdown_socket(peer.peer_sock)
+
+        self.peers = chutils.LockedSet()
+        self.stable.stop_running()
+        self.heartbeat.stop_running()
+        self.stable.join(1000)
+        self.heartbeat.join()
+
+        self.predecessor = None
+        self.successor = None
 
     def on_join_request(self, sock, msg):
         """ Receives a JOIN request from a node previously outside the ring.

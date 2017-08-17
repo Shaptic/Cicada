@@ -31,7 +31,8 @@ class HeartbeatManager(object):
 
                 L.info("Sending a PING with message %d.", ping.value)
                 handler = functools.partial(self.on_pong, ping.value)
-                self.processor.request(peer.peer_sock, msg, handler, wait_time=0)
+                self.processor.request(peer.peer_sock, msg, handler,
+                                       wait_time=0)
 
         def on_pong(self, ping_value, socket, message):
             """ Validates a PONG value to an initial PING.
@@ -75,6 +76,10 @@ class HeartbeatManager(object):
     def start(self):
         self.ping_thread.start()
         self.purge_thread.start()
+
+    def join(self):
+        self.ping_thread.join(100)
+        self.purge_thread.join(100)
 
     def stop_running(self):
         self.ping_thread.stop_running()

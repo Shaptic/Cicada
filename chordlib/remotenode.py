@@ -22,7 +22,7 @@ class RemoteNode(chordnode.ChordNode):
     as well as hold some remote-specific properties.
     """
 
-    def __init__(self, node_hash, listener_addr, existing_socket=None):
+    def __init__(self, on_send, node_hash, listener_addr, existing_socket=None):
         """ Establishes a connection to a remote node.
 
         The address is the receiving end of the socket of the `LocalNode`
@@ -41,7 +41,7 @@ class RemoteNode(chordnode.ChordNode):
         if existing_socket is not None:
             s = existing_socket
         else:
-            s = commlib.ThreadsafeSocket()
+            s = commlib.ThreadsafeSocket(on_send)
             s.connect(listener_addr)
             L.debug("Socket handle: %d", s.fileno())
 
