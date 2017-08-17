@@ -7,8 +7,11 @@ import math
 import random
 import argparse
 import threading
+import functools
 
 import pygame
+
+import packetlib
 
 from chordlib   import localnode
 from chordlib   import utils
@@ -27,10 +30,10 @@ class VisualSprite(pygame.sprite.Sprite):
     def __init__(self, listener):
         super(VisualSprite, self).__init__()
 
+        VisualSprite.SPRITES.append(self)
         self.peer = VisualNode(self, listener)
         self.pos = Vector(0, 0)
         self._state = DrawState.NORMAL
-        VisualSprite.SPRITES.append(self)
         self.build()
 
     def build(self):
@@ -129,44 +132,115 @@ class VisualSprite(pygame.sprite.Sprite):
 
 class VisualNode(localnode.LocalNode):
     """ Overloads peers to add visual indications of messages.
+
+    We hook into the send and receive operations of all of the sockets for the
+    peer:
+
+        - sending requests: we create an outbound dot and move it towards the
+                            target, storing the sequence number for later
+                            association.
+
+        - sending responses: we create an outbound dot towards the target that
+                             deactivates automatically when it hits the target.
     """
-    class DotState(enum.Enum):
-        WAITING = 1
-        CONFIRMED = 2
+    class DotType(enum.Enum):
+        UNKNOWN = 0
+        OUTBOUND_REQT = 1
+        OUTBOUND_RESP = 2
+        INBOUND_RESP  = 3
+        INBOUND_REQT  = 4
+
 
     class Dot(pygame.sprite.Sprite):
-        def __init__(self, letter, color):
-            super(VisualNode.Dot, self).__init__()
-            self.image = pygame.Surface((24, 24))
-            self.image.fill((255, 255, 255))
-            pygame.draw.circle(self.image, color, (0, 0), 12)
-            self.image.blit(FONT.render(letter, True, (255, 255, 255)), (0, 0))
-            self.state = VisualNode.DotState.WAITING
+        """ A visual representation of a message.
 
-        def move(self, x, y):
-            self.pos = Vector(x, y)
+        It automatically deactivates when it collides with the target.
+
+        :msg        a `MessageContainer` instance
+        :dot_type   a `DotType` representing the type of dot
+        :dest       the `VisualSprite` that we originated from
+        :dest       a `VisualSprite` that we're trying to collide with
+        """
+        def __init__(self, msg, dot_type, src, dest):
+            self.text = packetlib.message.MessageType.LOOKUP[msg.type]
+            if msg.is_response: self.text += "r"
+
+            self.msg = msg
+            self.src = src
+            self.dest = dest
+            self.dtype = dot_type
+
+            self.active = True
+            self.pos = Vector(src.pos)
+            self.pos.x += 50; self.pos.y += 25
+            self.build()
+
+            super(VisualNode.Dot, self).__init__()
+
+        def build(self):
+            """ Constructs the sprite contents.
+            """
+            self.font = pygame.font.SysFont("monospace", 24)
+            text = self.font.render(self.text, True, (0, 0, 0))
+
+            self.image = pygame.Surface((text.get_width(), 30))
+            self.image.fill((255, 255, 0))
+            self.image.blit(text, (0, 0))
 
         @property
         def rect(self):
-            return pygame.Rect(self.pos.x, self.pos.y, 24, 24)
+            return pygame.Rect(self.pos.x, self.pos.y, 32, 32)
+
+        def update(self):
+            if not self.active: return
+            delta  = pygame.math.Vector2(*self.dest.pos.t)
+            delta += pygame.math.Vector2(50, 25)
+            delta -= pygame.math.Vector2(*self.pos.t)
+            delta.normalize_ip()
+            delta *= 5
+
+            self.pos.x += delta.x
+            self.pos.y += delta.y
+
+            if self.dest.rect.colliderect(self.rect):
+                self.active = False
+
+        @property
+        def dest_addr(self):
+            return self.dest.peer.chord_addr
+
+        @staticmethod
+        def from_bytes(src, sock, bs):
+            msg = packetlib.message.MessageContainer.unpack(bs)
+            if msg.is_response:
+                dot_type = VisualNode.DotType.OUTBOUND_RESP
+            else:
+                dot_type = VisualNode.DotType.OUTBOUND_REQT
+
+            if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
+                            packetlib.message.MessageType.MSG_CH_PONG):
+                return None
+
+            dest = VisualNode._resolve(sock)
+            if not dest:
+                import pdb; pdb.set_trace()
+            dot = VisualNode.Dot(msg, dot_type, src.sprite, dest.sprite)
+            src.dots.add(dot)
+            return dot
+
 
     def __init__(self, sprite, listener):
-        super(VisualNode, self).__init__("%s:%d" % listener, listener)
+        super(VisualNode, self).__init__(
+            "%s:%d" % listener, listener,
+            functools.partial(VisualNode.Dot.from_bytes, self))
+
         self.sprite = sprite
         self.dots = pygame.sprite.Group()
 
-    def join_ring(self, remote):
-        dot = VisualNode.Dot("J", (0, 0, 200))
-        dot.move(*self.sprite.pos.t)
-        # self.dots.add(dot)
-        super(VisualNode, self).join_ring(remote)
-
     def update(self, window):
         for p in self.peers:
-            sprite = None
-            for match in VisualSprite.SPRITES:
-                if p.chord_addr == match.peer.chord_addr:
-                    sprite = match
+            sprite = filter(lambda x: x.peer.chord_addr == p.chord_addr,
+                            VisualSprite.SPRITES)[0]
 
             start = Vector(sprite.pos)
             start.x += 50; start.y += 25
@@ -176,14 +250,44 @@ class VisualNode(localnode.LocalNode):
             color, w = (0, 0, 0), 1
             if self.sprite.state == DrawState.SELECTED:
                 color = self.sprite.color
-                if p is self.successor: w = 4
-                elif p is self.predecessor:
+                if p is self.successor:
                     w = 4
+                elif p is self.predecessor:
                     color = (220, 0, 0)
+                    w = 4
 
             pygame.draw.line(window.screen, color, start.t, end.t, w)
 
+        self.dots.update()
+        self.dots = pygame.sprite.Group(*filter(lambda x: x.active, self.dots))
         self.dots.draw(window.screen)
+
+    @staticmethod
+    def _finder(addr):
+        for sp in VisualSprite.SPRITES:
+            chaddr = sp.peer.chord_addr
+            if chaddr[0] == addr[0] and chaddr[1] == addr[1]:
+                return sp.peer
+
+    @staticmethod
+    def _resolve(sock):
+        node = None
+        try:
+            # Either the remote is a `chord_addr` (if it accepted the
+            # connection) or the remote is the `sockname` of a peer in another
+            # peer.
+            remote = sock.getpeername()
+            for sprite in VisualSprite.SPRITES:
+                if sprite.peer.chord_addr == remote:
+                    return sprite.peer
+
+                for peer in sprite.peer.peers:
+                    if peer.peer_sock.getsockname() == remote:
+                        return sprite.peer
+
+        except Exception, e:
+            print "_resolve() failure:", str(e)
+        return node
 
 
 def peer_at(peers, x, y):
@@ -248,6 +352,11 @@ if __name__ == "__main__":
                     for p in sel.peer.peers:
                         if p not in (sel.peer.successor, sel.peer.predecessor):
                             print "  -", p
+                elif evt.key == pygame.K_d:
+                    sel = get_selected(ring)
+                    if not sel: continue
+                    print "Leaving %s from the ring." % sel
+                    sel.peer.leave_ring()
 
             elif evt.type == pygame.MOUSEMOTION:
                 mouse_pos = Vector(*evt.pos)
