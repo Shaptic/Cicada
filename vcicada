@@ -1,36 +1,5 @@
 #!/usr/bin/env python2
 """ A visual respresentation of a Chord system.
-
- Bug Investigation
-===================
-There's a bug in which a peer X that joins a ring via a certain peer Y will be
-dropped after the timeout period. In this scenario, where the alphabetical order
-of the peers is in the order that they join the ring, and the lines represent
-the initial JOIN request,
-
-      A ------------------------- B
-   h=60260                     h=63297
-                                  |
-                                  |
-      +-------------------------- C
-      |                        h=26452
-      |
-      D
-   h=26744
-
-Here, A, B, and C coordinate the ring successfully. When D joins C, it will be
-referred to B (setting it as its successor), but will never reach A, nor
-establish C as its predecessor. Eventually, D will get dropped from the ring
-completely.
-
-    - C should be referring D to A, not B.
-    - C should be setting D as its predecessor.
-    - Regardless, if B is D's successor, it shouldn't get dropped (PINGs).
-
- Root Cause
-============
-It looks like peers are keeping around the pre-join peer for too long, causing
-the `moddist` lookup to return the wrong one.
 """
 
 import enum
