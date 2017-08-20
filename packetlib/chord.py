@@ -145,7 +145,9 @@ class PackedNode(PackedObject):
 class InfoRequest(message.BaseMessage):
     RAW_FORMAT = []
     TYPE = message.MessageType.MSG_CH_INFO
-    def __repr__(self): return "<InfoRequest>"
+    @classmethod
+    def unpack(cls, bs): return InfoRequest()
+    def __repr__(self): return "<INFO>"
 
 
 class InfoResponse(message.BaseMessage):
@@ -180,9 +182,9 @@ class InfoResponse(message.BaseMessage):
         return cls(node.node, node.predecessor, node.successor)
 
     def __repr__(self):
-        return "<INFOr | from=%d,pred=%d,succ=%d>" % (self.sender,
+        return "<INFOr | from=%d,pred=%d,succ=%d>" % (self.sender.hash,
             0 if not self.predecessor else self.predecessor.hash,
-            0 if not self.successor else self.successor.hash)
+            0 if not self.successor   else self.successor.hash)
 
 
 class JoinRequest(message.BaseMessage):
@@ -273,7 +275,7 @@ class JoinResponse(InfoResponse):
         sub_info = super(JoinResponse, self).__repr__()
         sub_info = sub_info[len("<INFO | ") : -1]
         return "<JOINr | result=%d@%s:%d | %s>" % (self.req_succ_hash,
-            self.req_succ_addr, sub_info)
+            self.req_succ_addr[0], self.req_succ_addr[1], sub_info)
 
 
 class NotifyRequest(InfoResponse):
@@ -461,7 +463,11 @@ def generic_unpacker(msg):
     ):
         if msg.type == packet_type.TYPE and \
            msg.is_response == packet_type.RESPONSE:
-            return packet_type.unpack(msg.data)
+            try:
+                return packet_type.unpack(msg.data)
+            except:
+                print "Failed to .unpack() on type=%s, resp=%s" % (
+                    msg.msg_type, msg.is_response)
 
     msg.dump()
     raise ValueError("the packet %s did not have an unpacker." % msg)

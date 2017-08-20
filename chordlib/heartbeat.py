@@ -2,16 +2,19 @@
 
 import random
 import functools
+
 from   chordlib  import commlib, L
-from   packetlib import chord   as chordpkt
 from   packetlib import message
+
+import chordlib.utils   as chutils
+import packetlib.chord  as chordpkt
 
 
 class HeartbeatManager(object):
     """ Maintains connections between peers.
     """
 
-    class PingThread(commlib.InfiniteThread):
+    class PingThread(chutils.InfiniteThread):
         """ Sends pings to who we care about: predecessor and successor.
         """
         def __init__(self, peerlist, parent):
@@ -51,7 +54,7 @@ class HeartbeatManager(object):
                 peer.last_ping = pong
 
 
-    class PurgeThread(commlib.InfiniteThread):
+    class PurgeThread(chutils.InfiniteThread):
         """ Periodically purges peers that haven't PING'd us in a while.
         """
         def __init__(self, peerlist, parent):

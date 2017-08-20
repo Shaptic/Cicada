@@ -8,12 +8,11 @@ import time
 import enum
 
 from chordlib import L
-from chordlib import commlib
 from chordlib import routing
 from chordlib import utils as chutils
 
 
-class Stabilizer(commlib.InfiniteThread):
+class Stabilizer(chutils.InfiniteThread):
     """ Performs the Chord stabilization algorithm on a particular node.
     """
 
@@ -78,7 +77,7 @@ class ChordNode(object):
 
     def __repr__(self): return str(self)
     def __str__(self):
-        return "[%s<-%s->%s" % (
+        return "[%s<-%s->%s]" % (
             str(int(self.predecessor.hash)) if self.predecessor else None,
             self.compact,
             str(int(self.successor.hash)) if self.successor else None)

@@ -1,5 +1,30 @@
 import threading
+import time
 import math
+
+class InfiniteThread(threading.Thread):
+    """ An abstract thread to run a method forever until its stopped.
+    """
+    def __init__(self, pause=0, **kwargs):
+        super(InfiniteThread, self).__init__(**kwargs)
+        self._sleep = pause
+        self.running = True
+        self.setDaemon(True)
+
+    def run(self):
+        while self.running:
+            self._loop_method()
+            time.sleep(self.sleep)
+
+    def _loop_method(self):
+        raise NotImplemented
+
+    def stop_running(self):
+        self.running = False
+
+    @property
+    def sleep(self):
+        return self._sleep() if callable(self._sleep) else self._sleep
 
 
 class FixedStack(object):

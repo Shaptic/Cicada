@@ -6,7 +6,9 @@ import random
 import time
 import sys
 
-import chordlib.utils as chutils
+import chordlib.utils  as chutils
+import packetlib.chord as chordpkt
+
 from   chordlib  import L
 from   packetlib import message
 
@@ -106,32 +108,7 @@ class ReadQueue(object):
             return self.queue.pop(0)
 
 
-class InfiniteThread(threading.Thread):
-    """ An abstract thread to run a method forever until its stopped.
-    """
-    def __init__(self, pause=0, **kwargs):
-        super(InfiniteThread, self).__init__(**kwargs)
-        self._sleep = pause
-        self.running = True
-        self.setDaemon(True)
-
-    def run(self):
-        while self.running:
-            self._loop_method()
-            time.sleep(self.sleep)
-
-    def _loop_method(self):
-        raise NotImplemented
-
-    def stop_running(self):
-        self.running = False
-
-    @property
-    def sleep(self):
-        return self._sleep() if callable(self._sleep) else self._sleep
-
-
-class ListenerThread(InfiniteThread):
+class ListenerThread(chutils.InfiniteThread):
     """ A thread to wait for a new `Peer` to connect to this node.
 
     When a connection occurs, a `Peer` object is created from the joined socket.
@@ -167,7 +144,7 @@ class ListenerThread(InfiniteThread):
             self.stop_running()
 
 
-class SocketProcessor(InfiniteThread):
+class SocketProcessor(chutils.InfiniteThread):
     """ An event-based socket handler.
 
     In an infinite loop (see the parent class), we will periodically poll the
@@ -393,7 +370,7 @@ class SocketProcessor(InfiniteThread):
             self.logfile.write(">>> [resp] @ %d, %s:%s, %s\n" % (
                                time.time(), peer.getsockname()[0],
                                str(peer.getsockname()[1]).ljust(5),
-                               repr(response)))
+                               repr(chordpkt.generic_unpacker(response))))
             self.logfile.flush()
         return peer.sendall(response.pack())
 
@@ -444,7 +421,7 @@ class SocketProcessor(InfiniteThread):
                 self.logfile.write(">>> [reqt] @ %d, %s:%s, %s\n" % (
                                    time.time(), peer.getsockname()[0],
                                    str(peer.getsockname()[1]).ljust(5),
-                                   repr(msg)))
+                                   repr(chordpkt.generic_unpacker(msg))))
                 self.logfile.flush()
             peer.sendall(msg.pack())
 
@@ -541,7 +518,7 @@ class SocketProcessor(InfiniteThread):
                     self.logfile.write("<<< [mesg] @ %d, %s:%s, %s\n" % (
                                        time.time(), sock.getsockname()[0],
                                        str(sock.getsockname()[1]).ljust(5),
-                                       repr(msg)))
+                                       repr(chordpkt.generic_unpacker(msg))))
                     self.logfile.flush()
 
                 #

@@ -407,7 +407,7 @@ class BaseMessage(object):
     RESPONSE = False
 
     @classmethod
-    def unpack(cls, pkt): raise NotImplemented
+    def unpack(cls, pkt): raise NotImplementedError()
     def pack(self):       return ""
 
     @classmethod
