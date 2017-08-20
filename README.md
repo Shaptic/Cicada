@@ -8,31 +8,10 @@ Features:
   - Highly-efficient and resilient routing between users
   - Safe & secure encryption among trusted peers
 
-## Running ##
-The _Cicada_ protocol has no external dependencies, just Python 2.7. Clone the
-repository and start running a swarm:
-
-    $ touch cicada.log; tail -f cicada.log
-    $ ./cicada localhost:10000 &
-    $ ./cicada localhost:10001 --join localhost:10000
-
-You can also use the interactive shell to manage more complex swarms:
-
-    $ python2 shell.py
-    >>> create localhost:10000
-    Creating Chord node on localhost:10000
-    Identifier: 26490
-    >>> create localhost:10001
-    Creating Chord node on localhost:10001
-    Identifier: 16966
-    >>> create localhost:10002
-    Creating Chord node on localhost:10002
-    Identifier: 30572
-    >>> join 169 264
-    Joining Chord node on 127.0.0.1:10000
-    >>> join 305 169
-    Joining Chord node on 127.0.0.1:10001
-    >>> show
+## Installation ##
+    $ git clone -b unoptimized https://github.com/Shaptic/Cicada.git
+    $ cd Cicada
+    $ ./vcicada
 
 ### Using Cicada in Your Application ###
 _Cicada_ in itself isn't an application in the sense that it doesn't really
