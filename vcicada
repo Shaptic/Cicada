@@ -3,10 +3,10 @@
 
  Bug Investigation
 ===================
-There's a bug in which a peer that joins a ring via a peer that has not fully
-joined the ring will be dropped after the timeout period. In this scenario,
-where the alphabetical order of the peers is in the order that they join the
-ring,
+There's a bug in which a peer X that joins a ring via a certain peer Y will be
+dropped after the timeout period. In this scenario, where the alphabetical order
+of the peers is in the order that they join the ring, and the lines represent
+the initial JOIN request,
 
       A ------------------------- B
    h=60260                     h=63297
@@ -18,10 +18,14 @@ ring,
       D
    h=26744
 
-Here, A and B coordinate the ring successfully. Then, C joins, assigning B as
-its successor. Before any other changes occur in C, D joins the ring via C, thus
-setting it as its successor. D never establishes a predecessor, while C
-establishes A as its predecessor. Eventually, D will get dropped from the ring.
+Here, A, B, and C coordinate the ring successfully. When D joins C, it will be
+referred to B (setting it as its successor), but will never reach A, nor
+establish C as its predecessor. Eventually, D will get dropped from the ring
+completely.
+
+    - C should be referring D to A, not B.
+    - C should be setting D as its predecessor.
+    - Regardless, if B is D's successor, it shouldn't get dropped (PINGs).
 """
 
 import enum
@@ -176,7 +180,8 @@ class OutputLog(pygame.sprite.Sprite):
         #         calculate the longest line, and the total height of the new
         #         lines.
         new_height = sum(map(lambda x: x.get_height(), renders))
-        new_width  = max(map(lambda x: x.get_width(),  renders))
+        new_width  = max(self.rect.w,
+                         max(map(lambda x: x.get_width(), renders)))
 
         # Step 3: if the log is taller than the screen, remove old lines until
         #         it fits, simulating scrolling. we guesstimate the height of a
@@ -312,9 +317,9 @@ class VisualNode(localnode.LocalNode):
             else:
                 dot_type = VisualNode.DotType.OUTBOUND_REQT
 
-            if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
-                            packetlib.message.MessageType.MSG_CH_PONG):
-                return None
+            # if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
+            #                 packetlib.message.MessageType.MSG_CH_PONG):
+            #     return None
 
             try:
                 pkt = packetlib.chord.generic_unpacker(msg)
