@@ -434,6 +434,10 @@ class PingMessage(message.BaseMessage):
         v, _ = message.MessageContainer.extract_chunk(cls.RAW_FORMAT[1], bs, 0)
         return cls(sender, v)
 
+    def __repr__(self):
+        return "<%s | from=%d,val=%d>" % (message.MessageType.LOOKUP[self.TYPE],
+                                          self.sender, self.value)
+
 
 class PongMessage(PingMessage):
     """ A response to a PING message.
