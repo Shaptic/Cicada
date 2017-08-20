@@ -1,5 +1,27 @@
 #!/usr/bin/env python2
 """ A visual respresentation of a Chord system.
+
+ Bug Investigation
+===================
+There's a bug in which a peer that joins a ring via a peer that has not fully
+joined the ring will be dropped after the timeout period. In this scenario,
+where the alphabetical order of the peers is in the order that they join the
+ring,
+
+      A ------------------------- B
+   h=60260                     h=63297
+                                  |
+                                  |
+      +-------------------------- C
+      |                        h=26452
+      |
+      D
+   h=26744
+
+Here, A and B coordinate the ring successfully. Then, C joins, assigning B as
+its successor. Before any other changes occur in C, D joins the ring via C, thus
+setting it as its successor. D never establishes a predecessor, while C
+establishes A as its predecessor. Eventually, D will get dropped from the ring.
 """
 
 import enum
@@ -13,8 +35,8 @@ import pygame
 
 import packetlib
 
-from chordlib   import localnode
-from chordlib   import utils
+from chordlib import localnode
+from chordlib import utils
 
 from visualizer.window  import Window
 from visualizer.math    import Vector
@@ -31,9 +53,9 @@ class VisualSprite(pygame.sprite.Sprite):
         super(VisualSprite, self).__init__()
 
         VisualSprite.SPRITES.append(self)
-        self.peer = VisualNode(self, listener)
         self.pos = Vector(0, 0)
         self._state = DrawState.NORMAL
+        self.peer = VisualNode(self, listener)
         self.build()
 
     def build(self):
@@ -47,7 +69,7 @@ class VisualSprite(pygame.sprite.Sprite):
                   port = 50000
                   hash = 12345
         """
-        circle_size = 50
+        circle_size = 40
         circle = pygame.Surface((circle_size, circle_size))
         circle.fill((255, 255, 255))
         line1 = FONT.render("hash=%d" % int(self.peer.hash),
@@ -99,7 +121,7 @@ class VisualSprite(pygame.sprite.Sprite):
             self.state = DrawState.SELECTED
             if prev:
                 print "Joining %s to %s." % (prev.peer, self.peer)
-                def func(): prev.peer.join_ring(self.peer.chord_addr)
+                func = lambda: prev.peer.join_ring(self.peer.chord_addr)
                 threading.Thread(target=func).start()
 
     @property
@@ -128,6 +150,79 @@ class VisualSprite(pygame.sprite.Sprite):
 
     def update(self, window):
         self.peer.update(window)
+
+
+class OutputLog(pygame.sprite.Sprite):
+    """ Represents a text box, triggered on hovering a parent sprite.
+    """
+    def __init__(self, parent):
+        super(OutputLog, self).__init__()
+        self.font = pygame.font.SysFont("monospace", 14)
+        header = self.font.render("message log:", True, (0, 0, 0))
+        self.image = pygame.Surface((header.get_width(), header.get_height()))
+        self.image.fill((255, 255, 200))
+        self.image.blit(header, (0, 0))
+        self.parent = parent
+        self.pos = Vector(0, 50)
+
+    def write(self, *lines):
+        # Step 1: render each line individually.
+        renders = []
+        for line in lines:
+            render = self.font.render(line, True, (0, 0, 0))
+            renders.append(render)
+
+        # Step 2: create a surface that will fit all of the new lines.
+        #         calculate the longest line, and the total height of the new
+        #         lines.
+        new_height = sum(map(lambda x: x.get_height(), renders))
+        new_width  = max(map(lambda x: x.get_width(),  renders))
+
+        # Step 3: if the log is taller than the screen, remove old lines until
+        #         it fits, simulating scrolling. we guesstimate the height of a
+        #         line (because monospace).
+        #
+        #         we determine the number of lines we need to remove, and
+        #         recreate the old log, cutting out from the top this number of
+        #         lines.
+        line_height = self.font.size("Q")[1]
+        win_height = pygame.display.get_surface().get_height()
+        cutout_px = (new_height + self.rect.h) - win_height
+        if cutout_px > self.rect.h:
+            raise ValueError("rendering the new lines takes more space "
+                             "than the screen itself!")
+
+        if cutout_px > 0:      # otherwise, we have enough space
+            temp = pygame.Surface((new_height + (self.rect.h - cutout_px),
+                                   new_width))
+            temp.blit(self.image, (0, -cutout_px))
+            self.image = temp
+
+        new_height += self.rect.h
+        new_image = pygame.Surface((new_width, new_height))
+
+        # Step 4: draw the old log at the origin
+        new_image.fill((255, 255, 200))
+        new_image.blit(self.image, (0, 0))
+
+        # Step 5: render each new line after the old log
+        y_offset = self.rect.h
+        for line in renders:
+            new_image.blit(line, (0, y_offset))
+            y_offset += line.get_height()
+
+        self.image = new_image
+
+    @property
+    def rect(self):
+        return pygame.Rect(self.pos.x, self.pos.y, self.image.get_width(),
+                           self.image.get_height())
+
+    def update(self, window):
+        mouse_pos = pygame.mouse.get_pos()
+        if self.parent.rect.colliderect(pygame.Rect(mouse_pos[0], mouse_pos[1],
+                                                    1, 1)):
+            window.blit(self.image, self.pos.t)
 
 
 class VisualNode(localnode.LocalNode):
@@ -172,7 +267,7 @@ class VisualNode(localnode.LocalNode):
 
             self.active = True
             self.pos = Vector(src.pos)
-            self.pos.x += 50; self.pos.y += 25
+            self.pos.x += 40; self.pos.y += 20
             self.build()
 
             super(VisualNode.Dot, self).__init__()
@@ -194,7 +289,7 @@ class VisualNode(localnode.LocalNode):
         def update(self):
             if not self.active: return
             delta  = pygame.math.Vector2(*self.dest.pos.t)
-            delta += pygame.math.Vector2(50, 25)
+            delta += pygame.math.Vector2(40, 20)
             delta -= pygame.math.Vector2(*self.pos.t)
             delta.normalize_ip()
             delta *= 5
@@ -221,6 +316,12 @@ class VisualNode(localnode.LocalNode):
                             packetlib.message.MessageType.MSG_CH_PONG):
                 return None
 
+            try:
+                pkt = packetlib.chord.generic_unpacker(msg)
+                src.log.write(repr(pkt))
+            except:
+                pass
+
             dest = VisualNode._resolve(sock)
             if not dest:
                 import pdb; pdb.set_trace()
@@ -236,6 +337,7 @@ class VisualNode(localnode.LocalNode):
 
         self.sprite = sprite
         self.dots = pygame.sprite.Group()
+        self.log = OutputLog(self.sprite)
 
     def update(self, window):
         for p in self.peers:
@@ -243,24 +345,26 @@ class VisualNode(localnode.LocalNode):
                             VisualSprite.SPRITES)[0]
 
             start = Vector(sprite.pos)
-            start.x += 50; start.y += 25
+            start.x += 40; start.y += 20
             end = Vector(self.sprite.pos)
-            end.x += 50; end.y += 25
+            end.x += 40; end.y += 20
 
             color, w = (0, 0, 0), 1
             if self.sprite.state == DrawState.SELECTED:
                 color = self.sprite.color
-                if p is self.successor:
+                if p in (self.successor, self.predecessor):
                     w = 4
-                elif p is self.predecessor:
-                    color = (220, 0, 0)
-                    w = 4
+                    if self.successor == self.predecessor:
+                        color = (220, 0, 220)
+                    elif p is self.predecessor:
+                        color = (220, 0, 0)
 
             pygame.draw.line(window.screen, color, start.t, end.t, w)
 
         self.dots.update()
         self.dots = pygame.sprite.Group(*filter(lambda x: x.active, self.dots))
         self.dots.draw(window.screen)
+        self.log.update(window)
 
     @staticmethod
     def _finder(addr):
@@ -319,7 +423,7 @@ if __name__ == "__main__":
 
     sprites = sorted(ring.sprites(), key=lambda x: int(x.peer.hash))
     dimension = min(window.size.w, window.size.h)
-    radius = (dimension / 2) - (dimension * 0.10)
+    radius = (dimension / 2) - (dimension * 0.05)
     for i, d in enumerate(xrange(0, 360, 360 / len(ring))):
         x = window.center.x + radius * math.cos(utils.rad(d))
         y = window.center.y + radius * math.sin(utils.rad(d))
@@ -355,8 +459,10 @@ if __name__ == "__main__":
                 elif evt.key == pygame.K_d:
                     sel = get_selected(ring)
                     if not sel: continue
-                    print "Leaving %s from the ring." % sel
-                    sel.peer.leave_ring()
+                    print "Leaving %s from the ring." % sel.peer
+                    threading.Thread(target=(
+                        lambda sel=sel: sel.peer.leave_ring()
+                    )).start()
 
             elif evt.type == pygame.MOUSEMOTION:
                 mouse_pos = Vector(*evt.pos)
