@@ -26,6 +26,11 @@ completely.
     - C should be referring D to A, not B.
     - C should be setting D as its predecessor.
     - Regardless, if B is D's successor, it shouldn't get dropped (PINGs).
+
+ Root Cause
+============
+It looks like peers are keeping around the pre-join peer for too long, causing
+the `moddist` lookup to return the wrong one.
 """
 
 import enum
@@ -317,9 +322,9 @@ class VisualNode(localnode.LocalNode):
             else:
                 dot_type = VisualNode.DotType.OUTBOUND_REQT
 
-            # if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
-            #                 packetlib.message.MessageType.MSG_CH_PONG):
-            #     return None
+            if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
+                            packetlib.message.MessageType.MSG_CH_PONG):
+                return None
 
             try:
                 pkt = packetlib.chord.generic_unpacker(msg)

@@ -290,15 +290,15 @@ class LocalNode(chordnode.ChordNode):
         L.info("    Our new successor hash: %d on %s:%d",
                response.req_succ_hash, *response.req_succ_addr)
 
+        # Update the fake hash value we initially set (since we could only
+        # estimate what the hash could have been of this peer).
+        self.successor.hash = response.sender.hash
+
         # It's possible that the node we used to join the network is also our
         # successor (by chance or if they're alone in the network). In this
-        # case, we don't need to do anything except update the fake hash value
-        # we initially set (since we could only estimate what the hash could
-        # have been of this peer).
+        # case, we don't need to do anything.
         if self.successor.chord_addr == response.req_succ_addr:
             L.info("    Our entry peer is actually our successor, too!")
-            self.successor.hash = response.request_successor.hash
-            print "Updated hash (post-join):", int(self.successor.hash)
 
         else:
             # From this point forward, successor _must always_ be valid.
