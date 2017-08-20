@@ -145,6 +145,7 @@ class PackedNode(PackedObject):
 class InfoRequest(message.BaseMessage):
     RAW_FORMAT = []
     TYPE = message.MessageType.MSG_CH_INFO
+    def __repr__(self): return "<InfoRequest>"
 
 
 class InfoResponse(message.BaseMessage):
@@ -177,6 +178,11 @@ class InfoResponse(message.BaseMessage):
     def unpack(cls, bs):
         node, bs = PackedNode.unpack(bs)
         return cls(node.node, node.predecessor, node.successor)
+
+    def __repr__(self):
+        return "<INFOr | from=%d,pred=%d,succ=%d>" % (self.sender,
+            0 if not self.predecessor else self.predecessor.hash,
+            0 if not self.successor else self.successor.hash)
 
 
 class JoinRequest(message.BaseMessage):
@@ -214,6 +220,10 @@ class JoinRequest(message.BaseMessage):
             "Unpacked JR, but bytes remain: %s" % repr(bytestream)
 
         return cls(shash, addr)
+
+    def __repr__(self):
+        return "<JOIN | from=%d,on=%s:%d>" % (self.sender, self.listener[0],
+                                              self.listener[1])
 
 
 class JoinResponse(InfoResponse):
@@ -259,6 +269,12 @@ class JoinResponse(InfoResponse):
 
         return cls(rsn, info.sender, info.predecessor, info.successor)
 
+    def __repr__(self):
+        sub_info = super(JoinResponse, self).__repr__()
+        sub_info = sub_info[len("<INFO | ") : -1]
+        return "<JOINr | result=%d@%s:%d | %s>" % (self.req_succ_hash,
+            self.req_succ_addr, sub_info)
+
 
 class NotifyRequest(InfoResponse):
     RAW_FORMAT = InfoResponse.RAW_FORMAT
@@ -267,6 +283,10 @@ class NotifyRequest(InfoResponse):
 
     def __init__(self, *args):
         super(NotifyRequest, self).__init__(*args)
+
+    def __repr__(self):
+        info_str = super(NotifyRequest, self).__repr__()
+        return "<NOTIFY | %s>" % info_str[len("<INFO |") : -1]
 
 
 class NotifyResponse(message.BaseMessage):
@@ -286,6 +306,9 @@ class NotifyResponse(message.BaseMessage):
     def unpack(cls, bs):
         bit = struct.unpack('!' + cls.FORMAT, bs)
         return cls(bit)
+
+    def __repr__(self):
+        return "<NOTIFYr | set=%s>" % bool(self.set_pred)
 
 
 class LookupRequest(message.BaseMessage):
@@ -422,3 +445,19 @@ class PongMessage(PingMessage):
     def __init__(self, sender, ping_value):
         super(PongMessage, self).__init__(sender, iv=ping_value)
         self.time = time.time()
+
+
+def generic_unpacker(msg):
+    for packet_type in (
+        JoinRequest,    JoinResponse,
+        InfoRequest,    InfoResponse,
+        NotifyRequest,  NotifyResponse,
+        LookupRequest,  LookupResponse,
+        PingMessage,    PongMessage
+    ):
+        if msg.type == packet_type.TYPE and \
+           msg.is_response == packet_type.RESPONSE:
+            return packet_type.unpack(msg.data)
+
+    msg.dump()
+    raise ValueError("the packet %s did not have an unpacker." % msg)
