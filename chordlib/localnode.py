@@ -81,7 +81,7 @@ class LocalNode(chordnode.ChordNode):
           than waiting for the arbitrary stabilization routine.
     """
 
-    def __init__(self, data, bind_addr, on_send):
+    def __init__(self, data, bind_addr, on_send=lambda *args: None):
         """ Creates a node on a specific address with specific data.
 
         Typically, the data that you pass is simply a string representation of
@@ -147,7 +147,8 @@ class LocalNode(chordnode.ChordNode):
             node = self._peerlist_contains(hash)
             if node: return node
 
-        peer = remotenode.RemoteNode(self.on_send, hash, address, existing_socket=socket)
+        peer = remotenode.RemoteNode(self.on_send, hash, address,
+                                     existing_socket=socket)
         self.processor.add_socket(peer.peer_sock, self.process)
         self.peers.add(peer)
         return peer
@@ -159,9 +160,14 @@ class LocalNode(chordnode.ChordNode):
             L.error("Tried removing a peer that doesn't exist?")
             return False
 
-        self.on_remove(self, peer)
-        self.processor.shutdown_socket(peer.peer_sock)
-        self.peers.remove(peer)
+        try:
+            self.on_remove(self, peer)
+            self.processor.shutdown_socket(peer.peer_sock)
+            self.peers.remove(peer)
+
+        except Exception:
+            L.warning("Failed to remove a peer? %s" % peer)
+
         return True
 
     def join_ring(self, remote, timeout=10):
@@ -189,8 +195,6 @@ class LocalNode(chordnode.ChordNode):
         L.info("Joining peer ring via %s.", remote_str)
         self.successor = self.create_peer(routing.Hash(value=remote_str),
                                           remote)
-
-        print "Set initial hash (pre-join): ", int(self.successor.hash)
 
         request  = chordpkt.JoinRequest.make_packet(self.hash, self.chord_addr)
         response = self.processor.request(self.successor.peer_sock, request,
