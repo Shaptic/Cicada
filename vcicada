@@ -422,10 +422,17 @@ if __name__ == "__main__":
             elif evt.type == pygame.KEYUP:
                 if evt.key == pygame.K_q:
                     quit = True
+
+                # Join mode -- allows you to connect the selected peer to the
+                # next clicked peer.
                 elif evt.key == pygame.K_j:
                     mode = Mode.JOINER
+
+                # Cancel special modes / force select mode.
                 elif evt.key in (pygame.K_ESCAPE, pygame.K_s):
                     mode = Mode.SELECT
+
+                # Print out the connected peers of a peer.
                 elif evt.key == pygame.K_p:
                     sel = get_selected(ring)
                     if not sel: continue
@@ -435,6 +442,8 @@ if __name__ == "__main__":
                     for p in sel.peer.peers:
                         if p not in (sel.peer.successor, sel.peer.predecessor):
                             print "  -", p
+
+                # Disconnect the selected node from the ring.
                 elif evt.key == pygame.K_d:
                     sel = get_selected(ring)
                     if not sel: continue
@@ -442,6 +451,26 @@ if __name__ == "__main__":
                     threading.Thread(target=(
                         lambda sel=sel: sel.peer.leave_ring()
                     )).start()
+
+                # Interconnect nodes randomly.
+                elif evt.key == pygame.K_r:
+                    peerlist = map(lambda x: x.peer, ring)
+                    def connect_all():
+                        connected = [random.choice(peerlist)]
+                        unconnected = list(peerlist)
+                        unconnected.remove(connected[0])
+
+                        while unconnected:
+                            peer = random.choice(unconnected)
+                            root = random.choice(connected)
+
+                            print "Joining peer %s to network via %s" % (peer, root)
+                            unconnected.remove(peer)
+                            peer.join_ring(root.chord_addr)
+                            connected.append(peer)
+
+                    conn_thread = threading.Thread(target=connect_all)
+                    conn_thread.start()
 
             elif evt.type == pygame.MOUSEMOTION:
                 mouse_pos = Vector(*evt.pos)
