@@ -262,11 +262,6 @@ class LocalNode(chordnode.ChordNode):
             L.info("We need to make a remote lookup to make a good "
                    "successor recommendation.")
 
-            handler(sock, msg,
-                    self._find_closest_peer_moddist(req.sender),
-                    None)
-            return True
-
             peer = self._peerlist_contains(sock)
             self.lookup(req.sender, functools.partial(handler, sock, msg), 0,
                         requestor=peer)
@@ -275,6 +270,7 @@ class LocalNode(chordnode.ChordNode):
         if not self.stable.is_alive():
             self.stable.start()
             self.heartbeat.start()
+
         return retval
 
     @handle_failed_request
@@ -338,10 +334,10 @@ class LocalNode(chordnode.ChordNode):
 
             self.predecessor = self.create_peer(node.hash, node.chord_addr,
                                                 socket=sock)
-            self.predecessor.predecessor = node.predecessor
-            self.predecessor.successor = node.successor
             set_pred = True
 
+        self.predecessor.predecessor = node.predecessor
+        self.predecessor.successor = node.successor
         response = chordpkt.NotifyResponse.make_packet(set_pred, original=msg)
         self.processor.response(sock, response)
         return response
@@ -401,7 +397,7 @@ class LocalNode(chordnode.ChordNode):
         peer = self._peerlist_contains(sock)
         req = chordpkt.LookupRequest.unpack(msg.data)
 
-        def on_response(socket, request, value, result, response):
+        def on_response(socket, request, value, result_node, response):
             """ A specialized handler to route the lookup response packet.
             """
             if response is None:
@@ -413,20 +409,21 @@ class LocalNode(chordnode.ChordNode):
                 self.processor.response(socket, response)
                 return
 
-            response = chordpkt.LookupResponse.unpack(response.data)
             duplicate = chordpkt.LookupResponse.make_packet(
                 self.hash, response.lookup, response.mapped, response.listener,
-                hops=response.hops + 1, original=request)
+                response.hops + 1, original=request)
 
             L.info("Received a response for our forwarded lookup request.")
-            L.info("  The resulting peer: %d on %s:%d", duplicate.lookup,
-                   *duplicate.mapped)
+            L.info("  The resulting peer: %d on %s:%d", response.mapped,
+                   *response.listener)
             self.processor.response(socket, duplicate)
 
+        print "%d -- on_lookup_request" % self.hash
         L.info("Received a lookup request from peer: %d", req.sender)
         self.lookup(req.lookup,
                     functools.partial(on_response, sock, msg, req.lookup), 0,
                     requestor=peer)
+        return True
 
     def lookup(self, value, on_response, timeout, requestor=None):
         """ Performs an asynchronous LOOKUP request on a certain value.
@@ -463,7 +460,7 @@ class LocalNode(chordnode.ChordNode):
 
         L.info("Peer %s is looking up the value %d.", self, value)
 
-        # First, is this our responsibility?
+        # First, is this our responsibility? that is, the range: (pred, self]
         pred = self.predecessor or self.successor
         iv = routing.Interval(int(pred.hash), int(self.hash), routing.HASHMOD)
         if iv.within_open(int(value)) or value == self.hash:
@@ -471,10 +468,11 @@ class LocalNode(chordnode.ChordNode):
                    pred.hash, self.hash)
             return on_response(self, None)
 
+        print "%d forwarding hop to %d for the value %d" % (
+              self.hash, self.successor.hash, value)
+
         # If it's not us, find the closest hop we know of.
-        # exclusion = set((requestor,)) if requestor else set()
-        # nearest = self._find_closest_peer(value, exclude=exclusion)
-        nearest = self.successor
+        nearest = self._find_closest_peer(value)
 
         L.info("  Forwarding lookup to the nearest neighbor we're aware of:")
         L.info("    Nearest neighbor: %s", nearest)
@@ -633,14 +631,16 @@ class LocalNode(chordnode.ChordNode):
         self.on_remove(self, node)
 
         if self.successor and node == self.successor:
-            print "Lost our successor! (we are %s)" % self
-            L.critical("Lost our successor! (we are %s)", self)
+            msg = "Lost our successor! (we are %s)" % self
             self.successor = None
+            L.critical(msg)
+            print msg
 
         if self.predecessor and node == self.predecessor:
-            print "Lost our predecessor! (we are %s)" % self
-            L.critical("Lost our predecessor! (we are %s)", self)
+            msg = "Lost our predecessor! (we are %s)" % self
             self.predecessor = None
+            L.critical(msg)
+            print msg
 
         self.peers.remove(node)
 
@@ -650,19 +650,19 @@ class LocalNode(chordnode.ChordNode):
         L.debug("New peer from %s:%d", *address)
         self.processor.add_socket(sock, self.process)
 
-    # @chordnode.ChordNode.predecessor.getter
-    # def predecessor(self):
-    #     # Fall back to the closest preceding peer.
-    #     if self._predecessor is None and self.peers:
-    #         table = []  # [ (peer, distance) ]
-    #         for peer in self.peers.lockfree_iter():
-    #             dist = routing.moddist(int(peer.hash), int(self.hash),
-    #                                    routing.HASHMOD)
-    #             table.append((peer, dist))
+    @chordnode.ChordNode.predecessor.getter
+    def predecessor(self):
+        # Fall back to the closest preceding peer.
+        if self.peers:
+            table = []  # [ (peer, distance) ]
+            for peer in self.peers.lockfree_iter():
+                dist = routing.moddist(int(peer.hash), int(self.hash),
+                                       routing.HASHMOD)
+                table.append((peer, dist))
 
-    #         return min(table, key=lambda x: x[1])[0]
+            return min(table, key=lambda x: x[1])[0]
 
-    #     return self._predecessor
+        return self._predecessor
 
     def _find_closest_peer_moddist(self, value, exclude=set()):
         """ Finds the closest known peer to a value using modular distance.

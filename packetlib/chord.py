@@ -273,9 +273,9 @@ class JoinResponse(InfoResponse):
 
     def __repr__(self):
         sub_info = super(JoinResponse, self).__repr__()
-        sub_info = sub_info[len("<INFO | ") : -1]
-        return "<JOINr | result=%d@%s:%d | %s>" % (self.req_succ_hash,
-            self.req_succ_addr[0], self.req_succ_addr[1], sub_info)
+        return "<JOINr | result=%d@%s:%d | %s>" % (
+               self.req_succ_hash, self.req_succ_addr[0], self.req_succ_addr[1],
+               sub_info[len("<INFO | ") : -1])
 
 
 class NotifyRequest(InfoResponse):
@@ -288,7 +288,7 @@ class NotifyRequest(InfoResponse):
 
     def __repr__(self):
         info_str = super(NotifyRequest, self).__repr__()
-        return "<NOTIFY | %s>" % info_str[len("<INFO |") : -1]
+        return "<NOTIFY | %s>" % info_str[len("<INFO | ") : -1]
 
 
 class NotifyResponse(message.BaseMessage):
@@ -342,6 +342,9 @@ class LookupRequest(message.BaseMessage):
         assert bs == "", "Remaining bytes?? %s" % bs
         return LookupRequest(sender, lookup)
 
+    def __repr__(self):
+        return "<LOOKUP | to=%d,value=%d>" % (self.sender, self.lookup)
+
 
 class LookupResponse(message.BaseMessage):
     RAW_FORMAT = [
@@ -384,6 +387,11 @@ class LookupResponse(message.BaseMessage):
         hops = message.MessageContainer.extract_chunk(cls.RAW_FORMAT[-1], bs, 0)
 
         return LookupResponse(node, lookup, mapped, address)
+
+    def __repr__(self):
+        return "<LOOKUPr %d | from=%d,result=%d,%s:%d,hops=%d>" % (
+               self.lookup, self.sender, self.mapped, self.listener[0],
+               self.listener[1], self.hops)
 
 
 class StateMessage(message.BaseMessage):
