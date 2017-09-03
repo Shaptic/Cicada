@@ -92,14 +92,27 @@ class VisualSprite(pygame.sprite.Sprite):
     def deselect(self):
         self.state = DrawState.NORMAL
 
-    def select(self, prev=None):
+    def select(self, selmode=None, prev=None):
         if self.state == DrawState.SELECTED:
             self.deselect()
         else:
             self.state = DrawState.SELECTED
-            if prev:
+            if prev and selmode == Mode.JOINER:
                 print "Joining %s to %s." % (prev.peer, self.peer)
                 func = lambda: prev.peer.join_ring(self.peer.chord_addr)
+                threading.Thread(target=func).start()
+
+            elif prev and selmode == Mode.LOOKUP:
+                print "Looking up %d from %d" % (self.peer.hash, prev.peer.hash)
+                def lookup_response(result, msg):
+                    if msg is None:
+                        print "The resulting node is itself:", result
+
+                    else:
+                        print "Lookup result was %s, %d" % (result, msg.mapped)
+
+                func = lambda: prev.peer.lookup(self.peer.hash, lookup_response,
+                                                None)
                 threading.Thread(target=func).start()
 
     @property
@@ -329,14 +342,16 @@ class VisualNode(localnode.LocalNode):
             end.x += 40; end.y += 20
 
             color, w = (0, 0, 0), 1
-            if self.sprite.state == DrawState.SELECTED:
+
+            if p in (self.successor, self.predecessor):
                 color = self.sprite.color
-                if p in (self.successor, self.predecessor):
+                if self.sprite.state == DrawState.SELECTED:
                     w = 4
-                    if self.successor == self.predecessor:
-                        color = (220, 0, 220)
-                    elif p is self.predecessor:
-                        color = (220, 0, 0)
+
+                if self.successor == self.predecessor:
+                    color = (220, 0, 220)
+                elif p is self.predecessor:
+                    color = (220, 0, 0)
 
             pygame.draw.line(window.screen, color, start.t, end.t, w)
 
@@ -387,6 +402,7 @@ def get_selected(ring):
 class Mode(enum.Enum):
     SELECT = 1
     JOINER = 2
+    LOOKUP = 3
 
 if __name__ == "__main__":
     pygame.init()
@@ -397,7 +413,7 @@ if __name__ == "__main__":
     clock = pygame.time.Clock()
     window = Window()
     ring = pygame.sprite.Group([
-        VisualSprite(("localhost", 10000 + i)) for i in xrange(10)
+        VisualSprite(("localhost", 10000 + i)) for i in xrange(15)
     ])
 
     sprites = sorted(ring.sprites(), key=lambda x: int(x.peer.hash))
@@ -431,6 +447,10 @@ if __name__ == "__main__":
                 # Cancel special modes / force select mode.
                 elif evt.key in (pygame.K_ESCAPE, pygame.K_s):
                     mode = Mode.SELECT
+
+                # Perform a value lookup.
+                elif evt.key == pygame.K_l:
+                    mode = Mode.LOOKUP
 
                 # Print out the connected peers of a peer.
                 elif evt.key == pygame.K_p:
@@ -478,7 +498,8 @@ if __name__ == "__main__":
             elif evt.type == pygame.MOUSEBUTTONDOWN:
                 if evt.button == 1:
                     sel = None
-                    if mode == Mode.JOINER:
+                    prevmode = mode
+                    if mode in (Mode.JOINER, Mode.LOOKUP):
                         sel = get_selected(ring)
                         for peer in ring: peer.deselect()
                         mode = Mode.SELECT
@@ -486,7 +507,7 @@ if __name__ == "__main__":
                     for peer in ring:
                         mouse = pygame.Rect(evt.pos[0], evt.pos[1], 1, 1)
                         if peer.rect.colliderect(mouse):
-                            peer.select(sel)
+                            peer.select(selmode=prevmode, prev=sel)
                         else:
                             peer.deselect()
 
