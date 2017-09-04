@@ -4,6 +4,7 @@
 
 import enum
 import math
+import time
 import random
 import argparse
 import threading
@@ -104,16 +105,24 @@ class VisualSprite(pygame.sprite.Sprite):
 
             elif prev and selmode == Mode.LOOKUP:
                 print "Looking up %d from %d" % (self.peer.hash, prev.peer.hash)
-                def lookup_response(result, msg):
+                start = time.time()
+                def lookup_response(start_time, result, msg):
                     if msg is None:
                         print "The resulting node is itself:", result
 
                     else:
                         print "Lookup result was %s, %d" % (result, msg.mapped)
 
-                func = lambda: prev.peer.lookup(self.peer.hash, lookup_response,
-                                                None)
-                threading.Thread(target=func).start()
+                    total = time.time() - start_time
+                    print "Lookup operation took %0.2fms." % (total * 1000)
+
+                def do_lookup(start):
+                    prev.peer.lookup(self.peer.hash,
+                                     functools.partial(lookup_response, start),
+                                     None)
+
+                threading.Thread(target=functools.partial(do_lookup,
+                                                          start)).start()
 
     @property
     def rect(self):
