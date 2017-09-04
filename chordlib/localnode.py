@@ -109,6 +109,7 @@ class LocalNode(chordnode.ChordNode):
 
         self.peers = chutils.LockedSet()
         self.data = data
+
         self.on_remove = lambda *args: None
         self.on_send = on_send
         # self.on_recv = on_message_handler
@@ -117,6 +118,8 @@ class LocalNode(chordnode.ChordNode):
                                         self.listener.getsockname())
         L.info("Created local peer with hash %d on %s:%d.",
                self.hash, self.chord_addr[0], self.chord_addr[1])
+
+        self.routing_table = routing.RoutingTable(self, mod=routing.HASHMOD)
 
         # This is a thread that processes all of the known peers for messages
         # and calls the appropriate message handler.
@@ -418,7 +421,6 @@ class LocalNode(chordnode.ChordNode):
                    *response.listener)
             self.processor.response(socket, duplicate)
 
-        print "%d -- on_lookup_request" % self.hash
         L.info("Received a lookup request from peer: %d", req.sender)
         self.lookup(req.lookup,
                     functools.partial(on_response, sock, msg, req.lookup), 0,
@@ -467,9 +469,6 @@ class LocalNode(chordnode.ChordNode):
             L.info("  %d falls into our interval, (%d, %d].", value,
                    pred.hash, self.hash)
             return on_response(self, None)
-
-        print "%d forwarding hop to %d for the value %d" % (
-              self.hash, self.successor.hash, value)
 
         # If it's not us, find the closest hop we know of.
         nearest = self._find_closest_peer(value)
@@ -545,6 +544,31 @@ class LocalNode(chordnode.ChordNode):
                                                      self.successor)
         self.processor.request(self.successor.peer_sock, request,
                                None, wait_time=0)
+
+    def fix_routes(self):
+        """ Chooses a random route entry to validate in the network.
+        """
+        # return
+
+        index = random.randint(0, len(self.routing_table.routes) - 1)
+        route = self.routing_table(index)
+
+        def fix_route(route, peer, msg):
+            route.peer = peer
+
+        pred, state = self.routing_table.find_predecessor(route.start)
+        if state == routing.RoutingTable.LookupState.REMOTE:
+            packed_interval = routing.Hash.pack_int(route.start)
+            self.lookup(routing.Hash(hashed=packed_interval),
+                        functools.partial(fix_route, route), None)
+
+        elif state == routing.RoutingTable.LookupState.INVALID:
+            return False
+
+        if state == routing.RoutingTable.LookupState.LOCAL:
+            route.peer = pred.successor
+
+        return True
 
     def process(self, peer_socket, msg):
         L.debug("Received message %s from %s:%d", repr(msg),
@@ -625,8 +649,7 @@ class LocalNode(chordnode.ChordNode):
             return
 
         #
-        # TODO: Successor lists for backup successors and routing tables for
-        #       predecessor lookups!
+        # TODO: Successor lists for backup successors.
         #
         self.on_remove(self, node)
 

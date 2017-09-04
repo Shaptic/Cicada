@@ -23,6 +23,7 @@ class Stabilizer(chutils.InfiniteThread):
 
     def _loop_method(self):
         self.node.stabilize()
+        self.node.fix_routes()
 
 
 class ChordNode(object):

@@ -2,6 +2,7 @@
 """
 
 import math
+import enum
 import hashlib
 
 from chordlib import search
@@ -56,8 +57,12 @@ class Hash(object):
             self._hash_ints = tuple(hashed.parts)
             self._value = hashed.value
 
+        elif isinstance(hashed, (tuple, list)) and len(hashed) == CHUNKLEN:
+            self._hash_str = Hash.unpack_hash(hashed)
+            self._hash_ints = tuple(hashed)
+
         else:
-            raise TypeError("Expected value or (int, str, Hash), got: "
+            raise TypeError("Expected value or (int, str, iter, Hash), got: "
                 "value='%s',hashed='%s'" % (value, hashed))
 
         assert str(self) == Hash.unpack_hash(self.parts), \
@@ -65,6 +70,10 @@ class Hash(object):
 
         assert len(str(self)) == HASHLEN, \
             "Invalid hash size: %s" % str(self)
+
+        self._int_cache = sum([
+            i << (32 * j) for j, i in enumerate(self.parts[::-1])
+        ]) % HASHMOD
 
     @property
     def value(self):
@@ -75,9 +84,7 @@ class Hash(object):
         return self._hash_ints
 
     def __int__(self):
-        return sum([
-            i << (32 * j) for j, i in enumerate(self.parts[::-1])
-        ]) % HASHMOD
+        return self._int_cache
 
     def __eq__(self, other):
         if isinstance(other, int):    return int(self) == other
@@ -148,6 +155,17 @@ class Hash(object):
 
         return ''.join(chunks).ljust(HASHLEN, '\x00')
 
+    @staticmethod
+    def pack_int(long_value):
+        """ Converts a > 32-bit integer into an array, smallest first.
+        """
+        parts = []
+        while long_value > 0:
+            nextval = long_value & 0xFFFFFFFF
+            parts.append(int(nextval))
+            long_value >>= 32
+        return parts
+
 
 class Interval(object):
     """ Represents an interval [a, b) in a modulus ring.
@@ -195,3 +213,111 @@ class Interval(object):
     def __repr__(self): return str(self)
     def __str__(self):
         return "[%d, %s)" % (self.start, self.end)
+
+
+class Route(Interval):
+    """ Represents an `Interval` with an associated peer.
+    """
+
+    def __init__(self, start, end, peer, mod=HASHMOD):
+        super(Route, self).__init__(start, end, mod)
+        self.peer = peer
+
+
+class RoutingTable(object):
+    """ Represents routing optimization table for a peer.
+
+    We have a series of entries starting from the peer's hash value, with 2^i
+    steps between each entry. These should be refreshed regularly from the peer
+    itself.
+    """
+
+    class LookupState(enum.Enum):
+        """ Indicates how closely we resolved a particular lookup value.
+        """
+        INVALID = 0     # the routing table is not in a good state
+        LOCAL = 1       # resolved perfectly locally
+        REMOTE = 2      # resolved to the nearest local neighbor, but they need
+                        # to be asked for a closer resolution
+
+
+    def __init__(self, root, mod=HASHMOD):
+        self.mod = HASHMOD
+        self.root = root
+
+        bitcount = int(math.ceil(math.log(self.mod, 2)))
+
+        start = int(self.root.hash)
+        self.routes = [
+            Route((start + 2 ** i)       % self.mod,
+                  (start + 2 ** (i + 1)) % self.mod,
+                  None, self.mod) \
+            for i in xrange(bitcount)
+        ]
+
+    def find_predecessor(self, value):
+        """ Finds the nearest known predecessor peer for a value.
+
+        The way the predecessor lookup works is this:
+            - We pick a peer, starting with the root peer of this routing table.
+            - If: value in (peer, peer.successor], that peer is the predecessor.
+            - Otherwise, we delegate to `closest_preceding` to find the next-
+              best preceding value.
+            - This usually results in a "remote" value, meaning we will need to
+              perform a remote lookup.
+            - If not, go to step 2.
+
+        Theoretically, we could make this a conditional rather than a loop, but
+        because of the feasability that we could cache the routing tables of
+        remote nodes, it won't always result in a remote lookup. This concept,
+        though, will require a security review, since it may enable a single
+        peer to gain way too much information about the rest of the network.
+
+        :value      an integer or `Hash` value to perform a lookup on
+        :returns    a 2-tuple of the resulting peer node and a
+                    `RoutingTable.LookupState` indicating how well we could
+                    resolve the lookup locally
+        """
+        value = int(value)              # consolidate to `int`
+        if not self.root.successor:     # no valid entries yet
+            return self.root, RoutingTable.LookupState.INVALID
+
+        ret = self.root
+        while True:
+            iv = Interval(int(ret.hash), int(ret.successor.hash), self.mod)
+            if iv.within(value): break
+            ret = self.closest_preceding(value)
+
+            # This means that we need to perform a remote lookup on the value.
+            if not hasattr(ret, "routing_table"):
+                return ret, RoutingTable.LookupState.REMOTE
+
+        return ret, RoutingTable.LookupState.LOCAL
+
+    def closest_preceding(self, value):
+        value = int(value)
+        for i in xrange(len(self.routes) - 1, -1, -1):
+            iv = Interval(int(self.root.hash), value, self.mod)
+            peer = self.routes[i].peer
+            if peer and iv.within_open(int(peer.hash)):
+                return peer
+
+        return self.root
+
+    @property
+    def successor(self):
+        return self(0)
+
+    def __getitem__(self, i):
+        return self.routes[i]
+
+    def __setitem__(self, peer):
+        self.routes[i].peer = peer
+
+    def __len__(self):
+        """ Returns the number of valid unique routing entries in the table.
+        """
+        return len(set(map(lambda r: r.peer, filter(lambda x: x, self.routes))))
+
+    def __call__(self, i):
+        return self.routes[i]

@@ -21,6 +21,7 @@ class RemoteNode(chordnode.ChordNode):
     This merely contains the ability to establish a connection to another peer,
     as well as hold some remote-specific properties.
     """
+    PEER_TIMEOUT = 30
 
     def __init__(self, on_send, node_hash, listener_addr, existing_socket=None):
         """ Establishes a connection to a remote node.
