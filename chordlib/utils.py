@@ -123,7 +123,7 @@ def find_last(string, char, start=0):
 def nextmul(n, rd):
     """ Rounds a value `n` up to its nearest multiple of `rd`.
 
-    >>> nextmul(7), nextmul(8), nextmul(9)
+    >>> nextmul(7, 8), nextmul(8, 8), nextmul(9, 8)
     (8, 8, 16)
     """
     return prevmul(n, rd) + rd

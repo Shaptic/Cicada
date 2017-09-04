@@ -112,10 +112,10 @@ class Hash(object):
         return False
 
     def __le__(self, other):
-        return self < other and self == other
+        return self < other or self == other
 
     def __ge__(self, other):
-        return self > other and self == other
+        return self > other or self == other
 
     def __str__(self):  return self._hash_str
     def __repr__(self): return str(self)
