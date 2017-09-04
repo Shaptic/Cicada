@@ -53,6 +53,7 @@ class RemoteNode(chordnode.ChordNode):
 
         self.peer_sock = s
         self.last_ping = chordpkt.PongMessage(h, 1000)
+        self.timeout = RemoteNode.PEER_TIMEOUT
 
         super(RemoteNode, self).__init__(h, listener_addr)
         L.info("Created a remote peer with hash %d on %s:%d.",
@@ -70,6 +71,6 @@ class RemoteNode(chordnode.ChordNode):
 
     @property
     def is_alive(self):
-        """ Alive: received a PONG within the last 60 seconds.
+        """ Alive: received a PONG within the last `PEER_TIMEOUT` seconds.
         """
-        return self.last_ping.time + 60 >= time.time()
+        return self.last_ping.time + self.timeout >= time.time()
