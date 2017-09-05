@@ -157,8 +157,7 @@ class OutputLog(pygame.sprite.Sprite):
     """
     def __init__(self, parent):
         super(OutputLog, self).__init__()
-        self.font = pygame.font.SysFont("monospace", 14)
-        header = self.font.render("message log:", True, (0, 0, 0))
+        header = FONT2.render("message log:", True, (0, 0, 0))
         self.image = pygame.Surface((header.get_width(), header.get_height()))
         self.image.fill((255, 255, 200))
         self.image.blit(header, (0, 0))
@@ -169,7 +168,7 @@ class OutputLog(pygame.sprite.Sprite):
         # Step 1: render each line individually.
         renders = []
         for line in lines:
-            render = self.font.render(line, True, (0, 0, 0))
+            render = FONT2.render(line, True, (0, 0, 0))
             renders.append(render)
 
         # Step 2: create a surface that will fit all of the new lines.
@@ -186,7 +185,7 @@ class OutputLog(pygame.sprite.Sprite):
         #         we determine the number of lines we need to remove, and
         #         recreate the old log, cutting out from the top this number of
         #         lines.
-        line_height = self.font.size("Q")[1]
+        line_height = FONT2.size("Q")[1]
         win_height = pygame.display.get_surface().get_height()
         cutout_px = (new_height + self.rect.h) - win_height
         if cutout_px > self.rect.h:
@@ -276,8 +275,7 @@ class VisualNode(localnode.LocalNode):
         def build(self):
             """ Constructs the sprite contents.
             """
-            self.font = pygame.font.SysFont("monospace", 24)
-            text = self.font.render(self.text, True, (0, 0, 0))
+            text = FONT.render(self.text, True, (0, 0, 0))
 
             self.image = pygame.Surface((text.get_width(), 30))
             self.image.fill((255, 255, 0))
@@ -362,12 +360,17 @@ class VisualNode(localnode.LocalNode):
                 elif p is self.predecessor:
                     color = (220, 0, 0)
 
+            if p in self.routing_table:
+                color = (200, 200, 0)
+                if self.sprite.state == DrawState.SELECTED:
+                    w = 4
+
             pygame.draw.line(window.screen, color, start.t, end.t, w)
 
         self.dots.update()
         self.dots = pygame.sprite.Group(*filter(lambda x: x.active, self.dots))
         self.dots.draw(window.screen)
-        self.log.update(window)
+        # self.log.update(window)
 
     @staticmethod
     def _finder(addr):
@@ -416,13 +419,14 @@ class Mode(enum.Enum):
 if __name__ == "__main__":
     pygame.init()
 
-    FONT = pygame.font.SysFont("monospace", 24)
+    FONT = pygame.font.SysFont("monospace",  24)
+    FONT2 = pygame.font.SysFont("monospace", 12)
 
     quit = False
     clock = pygame.time.Clock()
     window = Window()
     ring = pygame.sprite.Group([
-        VisualSprite(("localhost", 10000 + i)) for i in xrange(15)
+        VisualSprite(("localhost", 10000 + i)) for i in xrange(20)
     ])
 
     sprites = sorted(ring.sprites(), key=lambda x: int(x.peer.hash))
@@ -471,6 +475,14 @@ if __name__ == "__main__":
                     for p in sel.peer.peers:
                         if p not in (sel.peer.successor, sel.peer.predecessor):
                             print "  -", p
+
+                # Print out the routing table of a peer.
+                elif evt.key == pygame.K_f:
+                    sel = get_selected(ring)
+                    if not sel: continue
+                    print "The routing table of %s is:" % sel.peer
+                    for route in sel.peer.routing_table:
+                        print "  -", route
 
                 # Disconnect the selected node from the ring.
                 elif evt.key == pygame.K_d:
