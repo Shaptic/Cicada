@@ -27,7 +27,7 @@ class HeartbeatManager(object):
             self.parent = parent
 
         def _loop_method(self):
-            fn = lambda x: x in (self.parent.predecessor, self.parent.successor)
+            fn = functools.partial(self._peer_filter, self.parent)
             for peer in filter(fn, self.peerlist):
                 ping = chordpkt.PingMessage(self.parent.hash)
                 msg = message.MessageContainer(ping.TYPE, data=ping.pack())
@@ -45,13 +45,17 @@ class HeartbeatManager(object):
                    pong.value, ping_value)
 
             if pong.value != ping_value:
-                import pdb; pdb.set_trace()
                 L.warning("Received an invalid PONG response.")
                 return False
 
             result = filter(lambda x: x.hash == pong.sender, self.peerlist)
             for peer in result:
                 peer.last_ping = pong
+
+        @staticmethod
+        def _peer_filter(parent, peer):
+            return peer in (parent.predecessor, parent.successor) or \
+                   peer in parent.routing_table
 
 
     class PurgeThread(chutils.InfiniteThread):
@@ -95,4 +99,7 @@ class HeartbeatManager(object):
         L.info("Received a PING message %d, responding.", ping.value)
         pong = chordpkt.PongMessage.make_packet(self.parent.hash, ping.value,
                                                 original=msg)
-        self.parent.processor.response(socket, pong)
+        try:
+            self.parent.processor.response(socket, pong)
+        except socket.error:
+            self.parent.die()

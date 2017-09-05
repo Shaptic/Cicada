@@ -135,6 +135,7 @@ class LocalNode(chordnode.ChordNode):
         # This thread periodically performs the stabilization algorithm. It is
         # not started until a JOIN request is sent or received.
         self.stable = chordnode.Stabilizer(self)
+        self.router = chordnode.RouteOptimizer(self)
 
     def create_peer(self, hash, address, socket=None):
         """ Create a new peer if necessary.
@@ -242,7 +243,7 @@ class LocalNode(chordnode.ChordNode):
         L.info("    The peer's hash is: %d", req.sender)
 
         # We were alone, and now we have a friend.
-        if self.successor is None:
+        if not self.successor:
             self.successor = self.create_peer(req.sender, req.listener,
                                               socket=sock)
             response = chordpkt.JoinResponse.make_packet(self, self,
@@ -272,6 +273,7 @@ class LocalNode(chordnode.ChordNode):
 
         if not self.stable.is_alive():
             self.stable.start()
+            self.router.start()
             self.heartbeat.start()
 
         return retval
@@ -314,6 +316,7 @@ class LocalNode(chordnode.ChordNode):
 
         if not self.stable.is_alive():
             self.stable.start()
+            self.router.start()
             self.heartbeat.start()
         return True
 
@@ -324,7 +327,7 @@ class LocalNode(chordnode.ChordNode):
         node = request.sender
 
         L.info("Received a notification from a peer (hash=%d).", node.hash)
-        if self.predecessor is not None:
+        if not self.predecessor:
             L.debug("    Testing this in the interval (%d, %d).",
                    int(self.predecessor.hash), int(self.hash))
 
@@ -355,7 +358,7 @@ class LocalNode(chordnode.ChordNode):
     def on_info_request(self, sock, msg):
         """ Processes an INFO message and responds with our ring details.
         """
-        if self.predecessor is None and self.successor is None:
+        if not any((self.predecessor, self.successor)):
             L.warning("FIXME: Received a request for information, but we aren't"
                       " done processing our join request yet!")
             return
@@ -490,7 +493,7 @@ class LocalNode(chordnode.ChordNode):
         instead." Then, we tell n's successor about n. That way, the successor
         can learn about n if it didn't already know in the first place.
         """
-        if self.successor is None:  # nothing to stabilize yet
+        if not self.successor:  # nothing to stabilize yet
             return
 
         # Query the successor for information.
@@ -548,25 +551,35 @@ class LocalNode(chordnode.ChordNode):
     def fix_routes(self):
         """ Chooses a random route entry to validate in the network.
         """
-        # return
+        # Prefer entries that don't have a valid peer yet.
+        lroute = None
+        for index, route in enumerate(self.routing_table.routes):
+            if not route.peer or isinstance(route.peer, chordnode.ChordNode):
+                lroute = route
+                break
+        else:
+            index = random.randint(0, self.routing_table.length - 1)
+            lroute = self.routing_table[index]
 
-        index = random.randint(0, len(self.routing_table.routes) - 1)
-        route = self.routing_table(index)
+        def fix_route(self, index, route, peer, msg):
+            if peer.chord_addr != self.chord_addr and \
+               not self._peerlist_contains(peer.chord_addr):
+                peer = self.create_peer(peer.hash, peer.chord_addr)
 
-        def fix_route(route, peer, msg):
-            route.peer = peer
+            if not route.peer or route.peer.chord_addr != peer.chord_addr:
+                self.routing_table[index] = peer
 
-        pred, state = self.routing_table.find_predecessor(route.start)
+        pred, state = self.routing_table.find_predecessor(lroute.start)
         if state == routing.RoutingTable.LookupState.REMOTE:
-            packed_interval = routing.Hash.pack_int(route.start)
+            packed_interval = routing.Hash.pack_int(lroute.start)
             self.lookup(routing.Hash(hashed=packed_interval),
-                        functools.partial(fix_route, route), None)
+                        functools.partial(fix_route, self, index, lroute), None)
 
         elif state == routing.RoutingTable.LookupState.INVALID:
             return False
 
         if state == routing.RoutingTable.LookupState.LOCAL:
-            route.peer = pred.successor
+            lroute.peer = pred.successor
 
         return True
 
@@ -720,12 +733,13 @@ class LocalNode(chordnode.ChordNode):
         """ Finds the closest known peer responsible for a value.
 
         Each peer is responsible (as far as we're concerned) for the values in
-        the range: (peer.predecessor.hash, peer.hash]. Thus, the peer that has
-        the value fall into that range is the closest one we know.
-
-        If a peer doesn't have a predecessor (as far as _they_ know), we can
-        fake one for them by finding their predecessor in _our_ peer table.
+        the range: (peer.predecessor.hash, peer.hash]. We use our routing table
+        to find the closest possible entry. Failing that, we fall back on
+        manually checking all of the internal peers for their intervals.
         """
+        rv = self.routing_table.lookup(value)
+        if rv != self: return rv
+
         pred = self.predecessor or self._find_closest_peer_moddist(value)
         for peer in self.peers.difference(exclude):
             iv = routing.Interval(int(pred.hash), int(peer.hash))

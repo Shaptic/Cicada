@@ -223,6 +223,11 @@ class Route(Interval):
         super(Route, self).__init__(start, end, mod)
         self.peer = peer
 
+    def __repr__(self): return str(self)
+    def __str__(self):
+        return "[%d, %s) | %s" % (self.start, self.end, repr(self.peer))
+
+
 
 class RoutingTable(object):
     """ Represents routing optimization table for a peer.
@@ -245,15 +250,27 @@ class RoutingTable(object):
         self.mod = HASHMOD
         self.root = root
 
-        bitcount = int(math.ceil(math.log(self.mod, 2)))
+        self.length = int(math.ceil(math.log(self.mod, 2)))
 
         start = int(self.root.hash)
         self.routes = [
             Route((start + 2 ** i)       % self.mod,
                   (start + 2 ** (i + 1)) % self.mod,
                   None, self.mod) \
-            for i in xrange(bitcount)
+            for i in xrange(self.length)
         ]
+
+    def lookup(self, value):
+        """ Finds the closest successor peer of a value.
+        """
+        value = int(value)
+        result, best = self.root, moddist(value, int(self.root.hash), self.mod)
+        for route in self.routes:
+            if not route.peer: continue
+            md = moddist(value, int(route.peer.hash), self.mod)
+            if md < best: best = md
+
+        return result
 
     def find_predecessor(self, value):
         """ Finds the nearest known predecessor peer for a value.
@@ -282,23 +299,18 @@ class RoutingTable(object):
         if not self.root.successor:     # no valid entries yet
             return self.root, RoutingTable.LookupState.INVALID
 
-        ret = self.root
-        while True:
-            iv = Interval(int(ret.hash), int(ret.successor.hash), self.mod)
-            if iv.within(value): break
-            ret = self.closest_preceding(value)
+        rv = self.root
+        iv = Interval(int(rv.hash), int(rv.successor.hash), self.mod)
+        if iv.within(value):
+            return rv, RoutingTable.LookupState.LOCAL
 
-            # This means that we need to perform a remote lookup on the value.
-            if not hasattr(ret, "routing_table"):
-                return ret, RoutingTable.LookupState.REMOTE
-
-        return ret, RoutingTable.LookupState.LOCAL
+        return self.closest_preceding(value), RoutingTable.LookupState.REMOTE
 
     def closest_preceding(self, value):
         value = int(value)
         for i in xrange(len(self.routes) - 1, -1, -1):
             iv = Interval(int(self.root.hash), value, self.mod)
-            peer = self.routes[i].peer
+            peer = self(i)
             if peer and iv.within_open(int(peer.hash)):
                 return peer
 
@@ -311,13 +323,42 @@ class RoutingTable(object):
     def __getitem__(self, i):
         return self.routes[i]
 
-    def __setitem__(self, peer):
+    def __setitem__(self, i, peer):
         self.routes[i].peer = peer
+        j = (i + 1) % len(self.routes)
+        while j != i:
+            if not self.routes[j].peer:
+                self.routes[j].peer = peer
+                continue
+
+            start = self.routes[j].start
+            md = moddist(start, int(peer.hash), self.mod)
+            cr = moddist(start, int(self.routes[j].peer.hash), self.mod)
+            if md <= cr and self.routes[j].peer.chord_addr != peer.chord_addr:
+                self.routes[j].peer = peer
+
+            j = (j + 1) % len(self.routes)
 
     def __len__(self):
         """ Returns the number of valid unique routing entries in the table.
         """
         return len(set(map(lambda r: r.peer, filter(lambda x: x, self.routes))))
 
+    def __contains__(self, peer):
+        for entry in self.routes:
+            if entry.peer == peer:
+                return True
+        return False
+
     def __call__(self, i):
-        return self.routes[i]
+        """ Returns the first available peer for an interval.
+        """
+        route = self.routes[i]
+        if not route.peer:
+            return route.peer
+
+        j = (i + 1) % len(self.routes)
+        while j != i:
+            if self.routes[j].peer:
+                return self.routes[j].peer
+            j = (j + 1) % len(self.routes)

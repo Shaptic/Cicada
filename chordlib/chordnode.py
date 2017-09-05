@@ -16,14 +16,26 @@ class Stabilizer(chutils.InfiniteThread):
     """ Performs the Chord stabilization algorithm on a particular node.
     """
 
-    def __init__(self, node):
+    def __init__(self, peer):
         super(Stabilizer, self).__init__(name="StabilizerThread",
                                          pause=lambda: random.randint(3, 10))
-        self.node = node
+        self.peer = peer
 
     def _loop_method(self):
-        self.node.stabilize()
-        self.node.fix_routes()
+        self.peer.stabilize()
+
+
+class RouteOptimizer(chutils.InfiniteThread):
+    """ Performs periodic successor lookups to fill out route table.
+    """
+
+    def __init__(self, peer):
+        super(RouteOptimizer, self).__init__(name="RouteTableThread",
+                                             pause=lambda: random.randint(2, 7))
+        self.peer = peer
+
+    def _loop_method(self):
+        self.peer.fix_routes()
 
 
 class ChordNode(object):

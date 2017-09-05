@@ -69,8 +69,19 @@ class RemoteNode(chordnode.ChordNode):
             remote[0], remote[1], self.compact,
             str(int(self.successor.hash))   if self.successor   else None)
 
+    def __bool__(self):
+        try:
+            self.peer_sock.getpeername()
+            return True
+        except socket.error:    # closed connection
+            return False
+
     @property
     def is_alive(self):
         """ Alive: received a PONG within the last `PEER_TIMEOUT` seconds.
         """
         return self.last_ping.time + self.timeout >= time.time()
+
+    def die(self):
+        self.last_ping = chordpkt.PongMessage(self.hash, 1)
+        self.last_ping.time = time.time() - self.timeout - 1
