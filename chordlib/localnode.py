@@ -551,9 +551,10 @@ class LocalNode(chordnode.ChordNode):
     def fix_routes(self):
         """ Chooses a random route entry to validate in the network.
         """
-        # Prefer entries that don't have a valid peer yet.
         lroute = None
-        for index, route in enumerate(self.routing_table.routes):
+
+        # Prefer entries that don't have a valid peer yet.
+        for index, route in enumerate(self.routing_table.iterate(0)):
             if not route.peer or type(route.peer) is chordnode.ChordNode:
                 lroute = route
                 break
@@ -579,7 +580,7 @@ class LocalNode(chordnode.ChordNode):
             return False
 
         if state == routing.RoutingTable.LookupState.LOCAL:
-            lroute.peer = pred.successor
+            fix_route(self, index, lroute, pred.successor, None)
 
         return True
 

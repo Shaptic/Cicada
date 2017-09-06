@@ -1,11 +1,11 @@
 #!/usr/bin/python2
 
 import random
+import socket
 import functools
 
 from   chordlib  import commlib, L
 from   packetlib import message
-
 import chordlib.utils   as chutils
 import packetlib.chord  as chordpkt
 
@@ -92,7 +92,7 @@ class HeartbeatManager(object):
         self.ping_thread.stop_running()
         self.purge_thread.stop_running()
 
-    def on_ping(self, socket, msg):
+    def on_ping(self, sock, msg):
         """ Responds with a PONG message to an incoming PING.
         """
         ping = chordpkt.PingMessage.unpack(msg.data)
@@ -100,6 +100,7 @@ class HeartbeatManager(object):
         pong = chordpkt.PongMessage.make_packet(self.parent.hash, ping.value,
                                                 original=msg)
         try:
-            self.parent.processor.response(socket, pong)
+            self.parent.processor.response(sock, pong)
         except socket.error:
-            self.parent.die()
+            p = self.parent._peerlist_contains(sock)
+            if p: p.die()

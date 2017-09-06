@@ -320,24 +320,27 @@ class RoutingTable(object):
     def successor(self):
         return self(0)
 
+    def iterate(self, start):
+        yield self.routes[start]
+
+        i = (start + 1) % len(self.routes)
+        while i != start:
+            yield self.routes[i]
+            i = (i + 1) % len(self.routes)
+
     def __getitem__(self, i):
         return self.routes[i]
 
     def __setitem__(self, i, peer):
-        self.routes[i].peer = peer
-        j = (i + 1) % len(self.routes)
-        while j != i:
-            if not self.routes[j].peer:
-                self.routes[j].peer = peer
+        for route in self.iterate(i):
+            if not route.peer:
+                route.peer = peer
                 continue
 
-            start = self.routes[j].start
-            md = moddist(start, int(peer.hash), self.mod)
-            cr = moddist(start, int(self.routes[j].peer.hash), self.mod)
-            if md <= cr and self.routes[j].peer.chord_addr != peer.chord_addr:
-                self.routes[j].peer = peer
-
-            j = (j + 1) % len(self.routes)
+            md = moddist(route.start, int(peer.hash),       self.mod)
+            cr = moddist(route.start, int(route.peer.hash), self.mod)
+            if md <= cr and route.peer.chord_addr != peer.chord_addr:
+                route.peer = peer
 
     def __len__(self):
         """ Returns the number of valid unique routing entries in the table.
@@ -353,12 +356,6 @@ class RoutingTable(object):
     def __call__(self, i):
         """ Returns the first available peer for an interval.
         """
-        route = self.routes[i]
-        if not route.peer:
-            return route.peer
-
-        j = (i + 1) % len(self.routes)
-        while j != i:
-            if self.routes[j].peer:
-                return self.routes[j].peer
-            j = (j + 1) % len(self.routes)
+        for route in self.iterate(i):
+            if route.peer:
+                return route.peer
