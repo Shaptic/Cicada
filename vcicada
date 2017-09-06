@@ -324,8 +324,7 @@ class VisualNode(localnode.LocalNode):
                 pass
 
             dest = VisualNode._resolve(sock)
-            if not dest:
-                import pdb; pdb.set_trace()
+            if not dest: return None
             dot = VisualNode.Dot(msg, dot_type, src.sprite, dest.sprite)
             src.dots.add(dot)
             return dot
@@ -418,6 +417,18 @@ class Mode(enum.Enum):
     JOINER = 2
     LOOKUP = 3
 
+def fix_ring(window, ring):
+    sprites = sorted(ring.sprites(), key=lambda x: int(x.peer.hash))
+    dimension = min(window.size.w, window.size.h)
+    radius = (dimension / 2) - (dimension * 0.05)
+    degree = 0
+
+    for i, d in enumerate(xrange(0, len(ring))):
+        x = window.center.x + radius * math.cos(utils.rad(degree))
+        y = window.center.y + radius * math.sin(utils.rad(degree))
+        degree += 360 / len(ring)
+        sprites[i].move(x, y)
+
 if __name__ == "__main__":
     pygame.init()
 
@@ -428,16 +439,9 @@ if __name__ == "__main__":
     clock = pygame.time.Clock()
     window = Window()
     ring = pygame.sprite.Group([
-        VisualSprite(("localhost", 10000 + i)) for i in xrange(20)
+        VisualSprite(("localhost", 10000 + i)) for i in xrange(12)
     ])
-
-    sprites = sorted(ring.sprites(), key=lambda x: int(x.peer.hash))
-    dimension = min(window.size.w, window.size.h)
-    radius = (dimension / 2) - (dimension * 0.05)
-    for i, d in enumerate(xrange(0, 360, 360 / len(ring))):
-        x = window.center.x + radius * math.cos(utils.rad(d))
-        y = window.center.y + radius * math.sin(utils.rad(d))
-        sprites[i].move(x, y)
+    fix_ring(window, ring)
 
     mode = Mode.SELECT
     mouse_pos = Vector(0, 0)
@@ -453,6 +457,21 @@ if __name__ == "__main__":
             elif evt.type == pygame.KEYUP:
                 if evt.key == pygame.K_q:
                     quit = True
+
+                # Adds a new node to the ring.
+                elif evt.key == pygame.K_a:
+                    def add(sprite):
+                        connected = map(lambda s: s.peer,
+                                        filter(lambda s: s.peer.peers, ring))
+                        root = random.choice(connected)
+                        sprite.peer.join_ring(root.chord_addr)
+
+                    latest = VisualSprite(("localhost", 10000 + len(ring)))
+                    ring.add(latest)
+                    fix_ring(window, ring)
+                    threading.Thread(
+                        target=functools.partial(add, latest)
+                    ).start()
 
                 # Join mode -- allows you to connect the selected peer to the
                 # next clicked peer.
