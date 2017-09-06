@@ -49,12 +49,14 @@ class VisualSprite(pygame.sprite.Sprite):
                   hash = 12345
         """
         circle_size = 40
-        circle = pygame.Surface((circle_size, circle_size))
+        radius = Vector(circle_size, circle_size)
+        circle = pygame.Surface(radius.t)
         circle.fill((255, 255, 255))
-        line1 = FONT.render("hash=%d" % int(self.peer.hash),
-                            True, (0, 0, 0))
-        line2 = FONT.render("port=%d" % self.peer.chord_addr[1],
-                            True, (0, 0, 0))
+
+        line1 = FONT2.render("hash=%d" % int(self.peer.hash),
+                             True, (0, 0, 0))
+        line2 = FONT2.render("port=%d" % self.peer.chord_addr[1],
+                             True, (0, 0, 0))
 
         padding = Vector(6, 6)
         fullsize = Vector(max(circle.get_width(), line1.get_width(),
@@ -257,7 +259,7 @@ class VisualNode(localnode.LocalNode):
         :dest       a `VisualSprite` that we're trying to collide with
         """
         def __init__(self, msg, dot_type, src, dest):
-            self.text = packetlib.message.MessageType.LOOKUP[msg.type]
+            self.text = packetlib.message.MessageType.LOOKUP[msg.type][0]
             if msg.is_response: self.text += "r"
 
             self.msg = msg
@@ -311,9 +313,9 @@ class VisualNode(localnode.LocalNode):
             else:
                 dot_type = VisualNode.DotType.OUTBOUND_REQT
 
-            if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
-                            packetlib.message.MessageType.MSG_CH_PONG):
-                return None
+            # if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
+            #                 packetlib.message.MessageType.MSG_CH_PONG):
+            #     return None
 
             try:
                 pkt = packetlib.chord.generic_unpacker(msg)
