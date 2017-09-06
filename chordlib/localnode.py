@@ -554,7 +554,7 @@ class LocalNode(chordnode.ChordNode):
         # Prefer entries that don't have a valid peer yet.
         lroute = None
         for index, route in enumerate(self.routing_table.routes):
-            if not route.peer or isinstance(route.peer, chordnode.ChordNode):
+            if not route.peer or type(route.peer) is chordnode.ChordNode:
                 lroute = route
                 break
         else:

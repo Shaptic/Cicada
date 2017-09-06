@@ -126,7 +126,8 @@ def nextmul(n, rd):
     >>> nextmul(7, 8), nextmul(8, 8), nextmul(9, 8)
     (8, 8, 16)
     """
-    return prevmul(n, rd) + rd
+    p = prevmul(n, rd)
+    return p + rd if p != n else p
 
 def prevmul(n, rd):
     """ Rounds a value `n` down to its nearest multiple of `rd`.

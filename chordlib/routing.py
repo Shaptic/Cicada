@@ -48,7 +48,7 @@ class Hash(object):
             self._hash_str  = chord_hash(self._value).rjust(HASHLEN, '\x00')
             self._hash_ints = Hash.pack_hash(self._hash_str)
 
-        elif isinstance(hashed, str):
+        elif isinstance(hashed, str) and hashed:
             self._hash_str  = hashed
             self._hash_ints = Hash.pack_hash(hashed)
 
