@@ -52,6 +52,8 @@ class ChordNode(object):
         All Chord nodes exist in their own "ring" on initialization. They have
         an empty finger table and no predecessor reference.
 
+        :node_hash      a `routing.Hash` instance that is the unique ID of the
+                        peer globally within the network
         :listener_addr  a 2-tuple (address, port) pair describing the address
                         on which the node is listening for new connections
         """

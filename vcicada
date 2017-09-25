@@ -14,6 +14,7 @@ import pygame
 
 import packetlib
 
+from swarmlib import swarmnode
 from chordlib import localnode
 from chordlib import utils
 
@@ -23,7 +24,7 @@ from visualizer.math    import Vector
 
 class DrawState(enum.Enum):
     NORMAL   = 0x1
-    SELECTED  = 0x2
+    SELECTED = 0x2
 
 
 class VisualSprite(pygame.sprite.Sprite):
@@ -34,7 +35,8 @@ class VisualSprite(pygame.sprite.Sprite):
         VisualSprite.SPRITES.append(self)
         self.pos = Vector(0, 0)
         self._state = DrawState.NORMAL
-        self.peer = VisualNode(self, listener)
+        self.peer = VisualNode(self)
+        self.peer.bind(*listener)
         self.build()
 
     def build(self):
@@ -45,8 +47,8 @@ class VisualSprite(pygame.sprite.Sprite):
                  |          |
                   \        /
                    +------+
-                  port = 50000
-                  hash = 12345
+                 port = 50000
+                 hash = 12345
         """
         circle_size = 40
         radius = Vector(circle_size, circle_size)
@@ -55,7 +57,7 @@ class VisualSprite(pygame.sprite.Sprite):
 
         line1 = FONT2.render("hash=%d" % int(self.peer.hash),
                              True, (0, 0, 0))
-        line2 = FONT2.render("port=%d" % self.peer.chord_addr[1],
+        line2 = FONT2.render("port=%d" % self.peer.listener[1],
                              True, (0, 0, 0))
 
         padding = Vector(6, 6)
@@ -78,7 +80,7 @@ class VisualSprite(pygame.sprite.Sprite):
     def on_hover(self, window, x, y):
         lines = []
         for t in [
-            ("peers=%d" % len(self.peer.peers)),
+            ("peers=%d" % len(self.peer.peer.peers)),
         ]:
             lines.append(FONT.render(t, True, (0, 0, 0)))
 
@@ -119,9 +121,9 @@ class VisualSprite(pygame.sprite.Sprite):
                     print "Lookup operation took %0.2fms." % (total * 1000)
 
                 def do_lookup(start):
-                    prev.peer.lookup(self.peer.hash,
-                                     functools.partial(lookup_response, start),
-                                     None)
+                    prev.peer.get_route(
+                        self.peer.hash,
+                        functools.partial(lookup_response, start))
 
                 threading.Thread(target=functools.partial(do_lookup,
                                                           start)).start()
@@ -142,7 +144,7 @@ class VisualSprite(pygame.sprite.Sprite):
     @property
     def color(self):
         if self.state == DrawState.NORMAL:
-            if self.peer.predecessor or self.peer.successor:
+            if self.peer.peer.predecessor or self.peer.peer.successor:
                 return (0, 190, 0)
             else:
                 return (230, 230, 0)
@@ -227,7 +229,7 @@ class OutputLog(pygame.sprite.Sprite):
             window.blit(self.image, self.pos.t)
 
 
-class VisualNode(localnode.LocalNode):
+class VisualNode(swarmnode.SwarmPeer):
     """ Overloads peers to add visual indications of messages.
 
     We hook into the send and receive operations of all of the sockets for the
@@ -313,9 +315,9 @@ class VisualNode(localnode.LocalNode):
             else:
                 dot_type = VisualNode.DotType.OUTBOUND_REQT
 
-            # if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
-            #                 packetlib.message.MessageType.MSG_CH_PONG):
-            #     return None
+            if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
+                            packetlib.message.MessageType.MSG_CH_PONG):
+                return None
 
             try:
                 pkt = packetlib.chord.generic_unpacker(msg)
@@ -330,18 +332,18 @@ class VisualNode(localnode.LocalNode):
             return dot
 
 
-    def __init__(self, sprite, listener):
-        super(VisualNode, self).__init__(
-            "%s:%d" % listener, listener,
-            functools.partial(VisualNode.Dot.from_bytes, self))
+    def __init__(self, sprite):
+        super(VisualNode, self).__init__(hooks={
+            "send": functools.partial(VisualNode.Dot.from_bytes, self)
+        })
 
         self.sprite = sprite
         self.dots = pygame.sprite.Group()
         self.log = OutputLog(self.sprite)
 
     def update(self, window):
-        for p in self.peers:
-            sprite = filter(lambda x: x.peer.chord_addr == p.chord_addr,
+        for p in self.peer.peers:
+            sprite = filter(lambda x: x.peer.listener == p.chord_addr,
                             VisualSprite.SPRITES)[0]
 
             start = Vector(sprite.pos)
@@ -351,17 +353,17 @@ class VisualNode(localnode.LocalNode):
 
             color, w = (0, 0, 0), 1
 
-            if p in (self.successor, self.predecessor):
+            if p in (self.peer.successor, self.peer.predecessor):
                 color = self.sprite.color
                 if self.sprite.state == DrawState.SELECTED:
                     w = 4
 
-                if self.successor == self.predecessor:
+                if self.peer.successor == self.peer.predecessor:
                     color = (220, 0, 220)
-                elif p is self.predecessor:
+                elif p is self.peer.predecessor:
                     color = (220, 0, 0)
 
-            if p in self.routing_table:
+            if p in self.peer.routing_table:
                 color = (200, 200, 0)
                 if self.sprite.state == DrawState.SELECTED:
                     w = 4
@@ -376,7 +378,7 @@ class VisualNode(localnode.LocalNode):
     @staticmethod
     def _finder(addr):
         for sp in VisualSprite.SPRITES:
-            chaddr = sp.peer.chord_addr
+            chaddr = sp.peer.listener
             if chaddr[0] == addr[0] and chaddr[1] == addr[1]:
                 return sp.peer
 
@@ -389,10 +391,10 @@ class VisualNode(localnode.LocalNode):
             # peer.
             remote = sock.getpeername()
             for sprite in VisualSprite.SPRITES:
-                if sprite.peer.chord_addr == remote:
+                if sprite.peer.listener == remote:
                     return sprite.peer
 
-                for peer in sprite.peer.peers:
+                for peer in sprite.peer.peer.peers:
                     if peer.peer_sock.getsockname() == remote:
                         return sprite.peer
 
@@ -439,7 +441,7 @@ if __name__ == "__main__":
     clock = pygame.time.Clock()
     window = Window()
     ring = pygame.sprite.Group([
-        VisualSprite(("localhost", 10000 + i)) for i in xrange(12)
+        VisualSprite(("localhost", 10000 + i)) for i in xrange(10)
     ])
     fix_ring(window, ring)
 
@@ -464,7 +466,7 @@ if __name__ == "__main__":
                         connected = map(lambda s: s.peer,
                                         filter(lambda s: s.peer.peers, ring))
                         root = random.choice(connected)
-                        sprite.peer.join_ring(root.chord_addr)
+                        sprite.peer.connect(*root.listener)
 
                     latest = VisualSprite(("localhost", 10000 + len(ring)))
                     ring.add(latest)
@@ -490,19 +492,20 @@ if __name__ == "__main__":
                 elif evt.key == pygame.K_p:
                     sel = get_selected(ring)
                     if not sel: continue
-                    print "All of the peers in %s are:" % sel.peer
-                    print "  s", sel.peer.successor
-                    print "  p", sel.peer.predecessor
-                    for p in sel.peer.peers:
-                        if p not in (sel.peer.successor, sel.peer.predecessor):
+                    peer = sel.peer.peer
+                    print "All of the peers in %s are:" % peer
+                    print "  s", peer.successor
+                    print "  p", peer.predecessor
+                    for p in peer.peers:
+                        if p not in (peer.successor, peer.predecessor):
                             print "  -", p
 
                 # Print out the routing table of a peer.
                 elif evt.key == pygame.K_f:
                     sel = get_selected(ring)
                     if not sel: continue
-                    print "The routing table of %s is:" % sel.peer
-                    for route in sel.peer.routing_table:
+                    print "The routing table of %s is:" % sel.peer.peer
+                    for route in sel.peer.peer.routing_table:
                         print "  -", route
 
                 # Disconnect the selected node from the ring.
@@ -528,11 +531,23 @@ if __name__ == "__main__":
 
                             print "Joining peer %s to network via %s" % (peer, root)
                             unconnected.remove(peer)
-                            peer.join_ring(root.chord_addr)
+                            peer.connect(*root.listener)
                             connected.append(peer)
 
                     conn_thread = threading.Thread(target=connect_all)
                     conn_thread.start()
+
+                # Broadcasts a packet to every peer from some source peer.
+                elif evt.key == pygame.K_b:
+                    sel = get_selected(ring)
+                    if not sel: break
+                    def bcaster(sprite):
+                        data = "broadcast data from %s:%d" % sel.peer.listener
+                        print "Sending '%s'" % data
+                        sprite.peer.broadcast(data)
+
+                    fn = functools.partial(bcaster, sel)
+                    threading.Thread(target=fn).start()
 
             elif evt.type == pygame.MOUSEMOTION:
                 mouse_pos = Vector(*evt.pos)

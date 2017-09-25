@@ -1,3 +1,7 @@
+#!/usr/bin/env python2
+""" Defines various packet structures for the Chord DHT protocol.
+"""
+
 import enum
 import time
 import struct
@@ -9,137 +13,7 @@ from chordlib  import chordnode
 from packetlib import message
 from packetlib import utils as pktutils
 
-
-class PackedObject(object):
-    __metaclass__ = message.FormatMetaclass
-    RAW_FORMAT = []
-
-
-class PackedAddress(PackedObject):
-    """ Describes how to serialize an (IP address, port) pair.
-    """
-    RAW_FORMAT = [
-        "I",    # 32-bit IPv4 address
-        "H"     # 2-byte port
-    ]
-
-    def __init__(self, ip, port):
-        self.address = (ip, port)
-
-    def pack(self):
-        return struct.pack('!' + self.FORMAT,
-                           pktutils.ip_to_int(self.address[0]),
-                           self.address[1])
-
-    @classmethod
-    def unpack(cls, bytestream):
-        offset = 0
-        get = lambda i: message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[i], bytestream, offset)
-
-        ip,     offset = get(0)
-        port,   offset = get(1)
-        return (pktutils.int_to_ip(ip), port), bytestream[offset:]
-
-
-class PackedHash(PackedObject):
-    """ Describes how to serialize a `Hash` object.
-    """
-    RAW_FORMAT = [
-        "%dI" % int(routing.HASHLEN / 4),
-                # hash value in discrete integers
-    ]
-
-    def __init__(self, hashval):
-        if not isinstance(hashval, routing.Hash):
-            raise TypeError("Can only serialize Hash objects.")
-
-        self.hashval = hashval
-
-    def pack(self):
-        return struct.pack('!' + self.FORMAT, *self.hashval.parts)
-
-    @classmethod
-    def unpack(cls, bs):
-        offset = 0
-        get = lambda i: message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[i], bs, offset, keep_chunks=True)
-
-        parts, i = get(0)
-        return routing.Hash(hashed=routing.Hash.unpack_hash(parts)), bs[i:]
-
-
-class PackedNode(PackedObject):
-    """ Describes how to completely serialize a Chord node.
-    """
-    RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,    # node hash
-        PackedAddress.EMBED_FORMAT, # node listener
-        "?",                        # predecessor valid bit
-        PackedHash.EMBED_FORMAT,    # predecessor hash
-        PackedAddress.EMBED_FORMAT, # predecessor listener
-        "?",                        # successor valid bit
-        PackedHash.EMBED_FORMAT,    # successor hash
-        PackedAddress.EMBED_FORMAT  # successor listener
-    ]
-
-    def __init__(self, root, predecessor, successor):
-        if not isinstance(root, chordnode.ChordNode):
-            raise TypeError("expected ChordNode, got %s" % type(root))
-
-        self.node = root
-        self.predecessor = predecessor
-        self.successor = successor
-
-    def pack(self):
-        pred_valid = self.predecessor is not None
-        succ_valid = self.successor   is not None
-
-        pred_hash = self.predecessor.hash if pred_valid else \
-                    routing.Hash(hashed="0" * routing.HASHLEN)
-        pred_addr = self.predecessor.chord_addr if pred_valid else \
-                    ("0.0.0.0", 0)
-
-        succ_hash = self.successor.hash if succ_valid else \
-                    routing.Hash(hashed="0" * routing.HASHLEN)
-        succ_addr = self.successor.chord_addr if succ_valid else \
-                    ("0.0.0.0", 0)
-
-        return struct.pack('!' + self.FORMAT,
-                           PackedHash(self.node.hash).pack(),
-                           PackedAddress(*self.node.chord_addr).pack(),
-                           pred_valid,
-                           PackedHash(pred_hash).pack(),
-                           PackedAddress(*pred_addr).pack(),
-                           succ_valid,
-                           PackedHash(succ_hash).pack(),
-                           PackedAddress(*succ_addr).pack())
-
-    @classmethod
-    def unpack(cls, bs):
-        offset = 0
-        get = lambda i: message.MessageContainer.extract_chunk(
-            cls.RAW_FORMAT[i], bs, offset)
-
-        node_hash, bs = PackedHash.unpack(bs)
-        node_addr, bs = PackedAddress.unpack(bs)
-        node = chordnode.ChordNode(node_hash, node_addr)
-
-        offset = 0
-        pred_valid, offset = get(2)
-        pred_hash, bs = PackedHash.unpack(bs[offset:])
-        pred_addr, bs = PackedAddress.unpack(bs)
-        pred = chordnode.ChordNode(pred_hash, pred_addr) if pred_valid else None
-
-        offset = 0
-        succ_valid, offset = get(5)
-        succ_hash, bs = PackedHash.unpack(bs[offset:])
-        succ_addr, bs = PackedAddress.unpack(bs)
-        succ = chordnode.ChordNode(succ_hash, succ_addr) if succ_valid else None
-
-        node.predecessor = pred
-        node.successor = succ
-        return cls(node, pred, succ), bs
+from packetlib.message import PackedHash, PackedAddress, PackedNode
 
 
 class InfoRequest(message.BaseMessage):
@@ -317,10 +191,12 @@ class LookupRequest(message.BaseMessage):
     RAW_FORMAT = [
         PackedHash.EMBED_FORMAT,    # sender hash
         PackedHash.EMBED_FORMAT,    # hash to look up
+        "I",                        # length of data to send, if any
+        "%ds",                      # additional data, if any
     ]
     TYPE = message.MessageType.MSG_CH_LOOKUP
 
-    def __init__(self, sender_hash, lookup_hash):
+    def __init__(self, sender_hash, lookup_hash, data=""):
         if any([not isinstance(x, routing.Hash) for x in (
             sender_hash, lookup_hash)
         ]):
@@ -328,19 +204,26 @@ class LookupRequest(message.BaseMessage):
 
         self.sender = sender_hash
         self.lookup = lookup_hash
+        self.data = data
 
     def pack(self):
-        return struct.pack('!' + self.FORMAT,
-            PackedHash(self.sender).pack(),
-            PackedHash(self.lookup).pack())
+        return struct.pack('!' + self.FORMAT % len(self.data),
+                           PackedHash(self.sender).pack(),
+                           PackedHash(self.lookup).pack(),
+                           len(self.data), self.data)
 
     @classmethod
     def unpack(cls, bs):
-        sender, bs = PackedHash.unpack(bs)
-        lookup, bs = PackedHash.unpack(bs)
+        get = lambda f: message.MessageContainer.extract_chunk(f, bs, offset)
 
-        assert bs == "", "Remaining bytes?? %s" % bs
-        return LookupRequest(sender, lookup)
+        offset = 0
+        sender, bs     = PackedHash.unpack(bs)
+        lookup, bs     = PackedHash.unpack(bs)
+        dlen,   offset = get(cls.RAW_FORMAT[2])
+        data,   offset = get(cls.RAW_FORMAT[3] % dlen)
+
+        assert bs[offset:] == "", "Remaining bytes?? %s" % bs[offset:]
+        return LookupRequest(sender, lookup, data)
 
     def __repr__(self):
         return "<LOOKUP | to=%d,value=%d>" % (self.sender, self.lookup)
@@ -473,9 +356,10 @@ def generic_unpacker(msg):
            msg.is_response == packet_type.RESPONSE:
             try:
                 return packet_type.unpack(msg.data)
-            except:
+            except Exception, e:
                 print "Failed to .unpack() on type=%s, resp=%s" % (
                     msg.msg_type, msg.is_response)
+                print str(e)
 
     msg.dump()
     raise ValueError("the packet %s did not have an unpacker." % msg)

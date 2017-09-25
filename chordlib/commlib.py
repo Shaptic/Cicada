@@ -372,7 +372,14 @@ class SocketProcessor(chutils.InfiniteThread):
                                str(peer.getsockname()[1]).ljust(5),
                                repr(chordpkt.generic_unpacker(response))))
             self.logfile.flush()
-        return peer.sendall(response.pack())
+
+        # It's possible that the original peer we sent to, is no longer an
+        # "active" peer because of network changes. This means the response
+        # socket might've closed.
+        try:
+            return peer.sendall(response.pack())
+        except socket.error, e:
+            return False
 
     def request(self, peer, msg, on_response, wait_time=None):
         """ Initiates a request on a particular thread.
@@ -409,6 +416,7 @@ class SocketProcessor(chutils.InfiniteThread):
 
         # Add this request to the current stream for the peer.
         if not self.prepare_request(peer, msg, evt):
+            import pdb; pdb.set_trace()
             raise ValueError("The request cannot be prepared on this socket.")
 
         try:

@@ -265,10 +265,12 @@ class RoutingTable(object):
         """
         value = int(value)
         result, best = self.root, moddist(value, int(self.root.hash), self.mod)
-        for route in self.routes:
-            if not route.peer: continue
-            md = moddist(value, int(route.peer.hash), self.mod)
-            if md < best: best = md
+        for peer in self.unique_iter(0):
+            md = moddist(value, int(peer.hash), self.mod)
+            if md < best:
+                best = md
+                result = peer
+                if best == 0: break     # exact match
 
         return result
 
@@ -320,7 +322,7 @@ class RoutingTable(object):
     def successor(self):
         return self(0)
 
-    def iterate(self, start):
+    def iter(self, start):
         yield self.routes[start]
 
         i = (start + 1) % len(self.routes)
@@ -328,11 +330,23 @@ class RoutingTable(object):
             yield self.routes[i]
             i = (i + 1) % len(self.routes)
 
+    def unique_iter(self, start):
+        """ Iterates over the unique, non-None peers in the routing table.
+        """
+        last = None
+        for route in self.iter(start):
+            if not route.peer: continue
+            if route.peer == last:
+                continue
+
+            last = route.peer
+            yield route.peer
+
     def __getitem__(self, i):
         return self.routes[i]
 
     def __setitem__(self, i, peer):
-        for route in self.iterate(i):
+        for route in self.iter(i):
             if not route.peer:
                 route.peer = peer
                 continue
@@ -356,6 +370,6 @@ class RoutingTable(object):
     def __call__(self, i):
         """ Returns the first available peer for an interval.
         """
-        for route in self.iterate(i):
+        for route in self.iter(i):
             if route.peer:
                 return route.peer

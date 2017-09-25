@@ -53,18 +53,13 @@ class LocalNode(chordnode.ChordNode):
     At the core, there's a `SocketProcessor` object that runs in a separate
     thread asynchronously processing all of the established connections. This is
     at a minimum two connections to the direct neighbors, and at a maximum
-    `log(n) + 1` connections, where `n` is the size of the hash ring.
+    `log(n) + 1` connections, where `n` is the size of the hash ring, excluding
+    unused sockets that are waiting to time out.
 
-    These raw sockets are linked to peers in this object in a list. Every node
+    These raw sockets are linked to peers in this object in a list. Every peer
     maintains direct properties that link to its predecessor and successor, but
     other connections (such as a when _another_ peer considers us as its
     successor) are only in the peer list.
-
-    Thus, when a predecessor is replaced by the NOTIFY flow, we maintain the old
-    connection for the other peer's sake, but no longer directly in the
-    `predecessor` property. Likewise for successors. When the old predecessor
-    decides that it's time to drop the connection (because they now know about
-    the better successor peer), we remove it from our internal list as well.
 
     The predecessor is ONLY set during stabilization, in which, after another
     peer, B, decides to make this peer, A, its successor, notifies A and B
@@ -81,7 +76,9 @@ class LocalNode(chordnode.ChordNode):
           than waiting for the arbitrary stabilization routine.
     """
 
-    def __init__(self, data, bind_addr, on_send=lambda *args: None):
+    def __init__(self, data, bind_addr,
+                 on_send=lambda *args: None,
+                 on_data=lambda d: None):
         """ Creates a node on a specific address with specific data.
 
         Typically, the data that you pass is simply a string representation of
@@ -112,6 +109,7 @@ class LocalNode(chordnode.ChordNode):
 
         self.on_remove = lambda *args: None
         self.on_send = on_send
+        self.on_data_packet = on_data
         # self.on_recv = on_message_handler
 
         super(LocalNode, self).__init__(routing.Hash(value=data),
@@ -267,8 +265,7 @@ class LocalNode(chordnode.ChordNode):
                    "successor recommendation.")
 
             peer = self._peerlist_contains(sock)
-            self.lookup(req.sender, functools.partial(handler, sock, msg), 0,
-                        requestor=peer)
+            self.lookup(req.sender, functools.partial(handler, sock, msg), 0)
             retval = True
 
         if not self.stable.is_alive():
@@ -402,6 +399,7 @@ class LocalNode(chordnode.ChordNode):
         """
         peer = self._peerlist_contains(sock)
         req = chordpkt.LookupRequest.unpack(msg.data)
+        if req.data: self.on_data_packet(req.data)
 
         def on_response(socket, request, value, result_node, response):
             """ A specialized handler to route the lookup response packet.
@@ -426,11 +424,10 @@ class LocalNode(chordnode.ChordNode):
 
         L.info("Received a lookup request from peer: %d", req.sender)
         self.lookup(req.lookup,
-                    functools.partial(on_response, sock, msg, req.lookup), 0,
-                    requestor=peer)
+                    functools.partial(on_response, sock, msg, req.lookup), 0)
         return True
 
-    def lookup(self, value, on_response, timeout, requestor=None):
+    def lookup(self, value, on_response, timeout, data=""):
         """ Performs an asynchronous LOOKUP request on a certain value.
 
         :value          a `Hash` value that we're looking up
@@ -443,6 +440,12 @@ class LocalNode(chordnode.ChordNode):
             resolving this peer. If the response was resolved locally, this is
             set to `None`.
         :timeout        in seconds, the amount of time to wait for the response
+        :data[=""]      includes additional, raw data with the lookup request
+            this usually implies that there is no expected response, since we're
+            actually routing data instead, but this isn't assumed. The response
+            is still reported accordingly, which allows the caller to check if
+            the data actually was actually routed to its intended destination,
+            or merely its nearest hop.
         """
         def on_lookup_response(secondary_handler, response_socket,
                                response_message):
@@ -479,7 +482,7 @@ class LocalNode(chordnode.ChordNode):
         L.info("  Forwarding lookup to the nearest neighbor we're aware of:")
         L.info("    Nearest neighbor: %s", nearest)
 
-        request = chordpkt.LookupRequest.make_packet(self.hash, value)
+        request = chordpkt.LookupRequest.make_packet(self.hash, value, data)
         self.processor.request(nearest.peer_sock, request,
                                functools.partial(on_lookup_response,
                                                  on_response),
@@ -554,8 +557,8 @@ class LocalNode(chordnode.ChordNode):
         lroute = None
 
         # Prefer entries that don't have a valid peer yet.
-        for index, route in enumerate(self.routing_table.iterate(0)):
-            if not route.peer or type(route.peer) is chordnode.ChordNode:
+        for index, route in enumerate(self.routing_table.iter(0)):
+            if not route.peer:
                 lroute = route
                 break
         else:
@@ -563,8 +566,7 @@ class LocalNode(chordnode.ChordNode):
             lroute = self.routing_table[index]
 
         def fix_route(self, index, route, peer, msg):
-            if peer.chord_addr != self.chord_addr and \
-               not self._peerlist_contains(peer.chord_addr):
+            if peer.chord_addr != self.chord_addr:
                 peer = self.create_peer(peer.hash, peer.chord_addr)
 
             if not route.peer or route.peer.chord_addr != peer.chord_addr:
@@ -576,11 +578,11 @@ class LocalNode(chordnode.ChordNode):
             self.lookup(routing.Hash(hashed=packed_interval),
                         functools.partial(fix_route, self, index, lroute), None)
 
+        elif state == routing.RoutingTable.LookupState.LOCAL:
+            fix_route(self, index, lroute, pred.successor, None)
+
         elif state == routing.RoutingTable.LookupState.INVALID:
             return False
-
-        if state == routing.RoutingTable.LookupState.LOCAL:
-            fix_route(self, index, lroute, pred.successor, None)
 
         return True
 
