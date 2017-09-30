@@ -169,6 +169,7 @@ class LocalNode(chordnode.ChordNode):
 
         except Exception:
             L.warning("Failed to remove a peer? %s" % peer)
+            return False
 
         return True
 
@@ -568,6 +569,7 @@ class LocalNode(chordnode.ChordNode):
         def fix_route(self, index, route, peer, msg):
             if peer.chord_addr != self.chord_addr:
                 peer = self.create_peer(peer.hash, peer.chord_addr)
+                if not peer: return self.remove_peer(peer)
 
             if not route.peer or route.peer.chord_addr != peer.chord_addr:
                 self.routing_table[index] = peer
@@ -687,6 +689,9 @@ class LocalNode(chordnode.ChordNode):
         """ Adds a newly connected peer to the internal socket processor.
         """
         L.debug("New peer from %s:%d", *address)
+        print "New peer on %s from %s:%d" % (self, address[0], address[1])
+        # cn = chordnode.ChordNode(None, ("localhost", None))
+        # cn._socket = sock
         self.processor.add_socket(sock, self.process)
 
     @chordnode.ChordNode.predecessor.getter

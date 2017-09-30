@@ -55,7 +55,8 @@ class HeartbeatManager(object):
         @staticmethod
         def _peer_filter(parent, peer):
             return peer in (parent.predecessor, parent.successor) or \
-                   peer in parent.routing_table
+                   peer.hash in map(lambda p: p.hash,
+                                    parent.routing_table.unique_iter(0))
 
 
     class PurgeThread(chutils.InfiniteThread):

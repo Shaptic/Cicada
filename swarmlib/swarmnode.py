@@ -126,6 +126,9 @@ class SwarmPeer(object):
     def _on_data(self, data):
         self._read_queue.push(data)
 
+    def __repr__(self):
+        return repr(self.peer)
+
 
 if __name__ == '__main__':
     a, b = SwarmPeer(), SwarmPeer()

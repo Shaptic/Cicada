@@ -104,7 +104,7 @@ class VisualSprite(pygame.sprite.Sprite):
             self.state = DrawState.SELECTED
             if prev and selmode == Mode.JOINER:
                 print "Joining %s to %s." % (prev.peer, self.peer)
-                func = lambda: prev.peer.join_ring(self.peer.chord_addr)
+                func = lambda: prev.peer.connect(*self.peer.listener)
                 threading.Thread(target=func).start()
 
             elif prev and selmode == Mode.LOOKUP:

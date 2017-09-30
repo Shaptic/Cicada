@@ -69,9 +69,10 @@ class RemoteNode(chordnode.ChordNode):
             remote[0], remote[1], self.compact,
             str(int(self.successor.hash))   if self.successor   else None)
 
-    def __bool__(self):
+    def __nonzero__(self):
         try:
             self.peer_sock.getpeername()
+            self.peer_sock.fileno()
             return True
         except socket.error:    # closed connection
             return False
