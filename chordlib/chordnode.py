@@ -66,6 +66,10 @@ class ChordNode(object):
         self._successor = None
 
     @property
+    def is_valid(self):
+        raise NotImplementedError()
+
+    @property
     def predecessor(self):
         return self._predecessor
 

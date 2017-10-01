@@ -17,10 +17,9 @@ import time
 from chordlib import L  # the logfile
 from chordlib import utils as chutils
 from chordlib import routing
-from chordlib import commlib
 from chordlib import heartbeat
-from chordlib import chordnode
-from chordlib import remotenode
+from chordlib import peersocket, commlib
+from chordlib import chordnode, remotenode
 
 import chordlib
 import packetlib
@@ -92,14 +91,12 @@ class LocalNode(chordnode.ChordNode):
 
         # This socket is responsible for inbound connections (from new potential
         # Peer nodes). It is always in an "accept" state in a separate thread.
-        self.listener = commlib.ThreadsafeSocket(on_send)
-        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listener = peersocket.PeerSocket(on_send=on_send)
         self.listener.bind(bind_addr)
-        self.listener.listen(5)
 
         # This is the listener thread. When it receives a new socket, it will
         # create a Peer object from it.
-        L.info("Starting listener thread for %s", self.listener.getsockname())
+        L.info("Starting listener thread for %s", self.listener.local)
         self.listen_thread = commlib.ListenerThread(self.listener,
                                                     self.on_new_peer)
         self.listen_thread.start()
@@ -113,7 +110,7 @@ class LocalNode(chordnode.ChordNode):
         # self.on_recv = on_message_handler
 
         super(LocalNode, self).__init__(routing.Hash(value=data),
-                                        self.listener.getsockname())
+                                        self.listener.local)
         L.info("Created local peer with hash %d on %s:%d.",
                self.hash, self.chord_addr[0], self.chord_addr[1])
 
@@ -121,8 +118,7 @@ class LocalNode(chordnode.ChordNode):
 
         # This is a thread that processes all of the known peers for messages
         # and calls the appropriate message handler.
-        self.processor = commlib.SocketProcessor(self,
-                                                 self.on_shutdown,
+        self.processor = commlib.SocketProcessor(self.on_shutdown,
                                                  self.on_error)
         self.processor.start()
 
@@ -230,21 +226,19 @@ class LocalNode(chordnode.ChordNode):
         address details and hope they figure out that they're already connected
         to us.
         """
-        L.info("Peer (%s:%d) requested to join the network.",
-               *sock.getpeername())
+        L.info("Peer (%s:%d) requested to join the network.", *sock.remote)
 
         req = chordpkt.JoinRequest.unpack(msg.data)
 
         L.info("Allowing connection and responding with our details:")
         L.info("    We are: %s", self)
-        L.info("    Our predecessor: %s", self.predecessor)
-        L.info("    Our successor: %s", self.successor)
+        L.info("    Our predecessor: %s",    self.predecessor)
+        L.info("    Our successor: %s",      self.successor)
         L.info("    The peer's hash is: %d", req.sender)
 
         # We were alone, and now we have a friend.
         if not self.successor:
-            self.successor = self.create_peer(req.sender, req.listener,
-                                              socket=sock)
+            self.successor = self.create_peer(req.sender, req.listener, sock)
             response = chordpkt.JoinResponse.make_packet(self, self,
                                                          self.predecessor,
                                                          self.successor,
@@ -367,7 +361,7 @@ class LocalNode(chordnode.ChordNode):
         response = chordpkt.InfoResponse.make_packet(self, pred, succ,
                                                      original=msg)
 
-        L.info("Peer (%s:%d) requested info about us.", *sock.getpeername())
+        L.info("Peer (%s:%d) requested info about us.", *sock.remote)
         L.info("Our details (%s:%d):", *self.chord_addr)
         L.info("    Hash: %d", self.hash)
         L.info("    Predecessor: %s", pred)
@@ -383,7 +377,7 @@ class LocalNode(chordnode.ChordNode):
         response = chordpkt.InfoResponse.unpack(msg.data)
         node = self._peerlist_contains(sock)
         if not node:
-            L.warning("Unknown socket source? %s:%d" % sock.getpeername())
+            L.warning("Unknown socket source? %s:%d" % sock.remote)
             node = self.create_peer(response.sender.hash,
                                     response.sender.chord_addr, socket=sock)
 
@@ -589,8 +583,7 @@ class LocalNode(chordnode.ChordNode):
         return True
 
     def process(self, peer_socket, msg):
-        L.debug("Received message %s from %s:%d", repr(msg),
-            *peer_socket.getsockname())
+        L.debug("Received message %s from %s:%d", repr(msg), *peer_socket.local)
 
         handlers = {
             packetlib.MessageType.MSG_CH_JOIN:      (self.on_join_request,   0),
@@ -626,11 +619,11 @@ class LocalNode(chordnode.ChordNode):
                 if peer.hash == elem:
                     return peer
 
-        elif isinstance(elem, commlib.ThreadsafeSocket):
+        elif isinstance(elem, peersocket.PeerSocket):
             for peer in self.peers:
                 if peer.peer_sock == elem:
                     return peer
-            return self._peerlist_contains(elem.getsockname())
+            return self._peerlist_contains(elem.local)
 
         elif isinstance(elem, chordnode.ChordNode):
             for peer in self.peers:
@@ -685,14 +678,17 @@ class LocalNode(chordnode.ChordNode):
 
         self.peers.remove(node)
 
-    def on_new_peer(self, address, sock):
+    def on_new_peer(self, new_peersock):
         """ Adds a newly connected peer to the internal socket processor.
         """
-        L.debug("New peer from %s:%d", *address)
-        print "New peer on %s from %s:%d" % (self, address[0], address[1])
-        # cn = chordnode.ChordNode(None, ("localhost", None))
-        # cn._socket = sock
-        self.processor.add_socket(sock, self.process)
+        L.debug("New peer from %s:%d", *new_peersock.remote)
+        print "New peer on %s from %s:%d" % (self, new_peersock.remote[0],
+                                             new_peersock.remote[1])
+        self.processor.add_socket(new_peersock, self.process)
+
+    @property
+    def is_valid(self):
+        return True
 
     @chordnode.ChordNode.predecessor.getter
     def predecessor(self):

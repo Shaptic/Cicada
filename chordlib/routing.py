@@ -335,8 +335,7 @@ class RoutingTable(object):
         """
         last = None
         for route in self.iter(start):
-            if not route.peer: continue
-            if route.peer == last:
+            if not route.peer or route.peer == last:
                 continue
 
             last = route.peer

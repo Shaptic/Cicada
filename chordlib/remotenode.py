@@ -12,6 +12,7 @@ import socket
 
 from chordlib  import commlib
 from chordlib  import chordnode, L
+from chordlib  import peersocket
 from chordlib  import routing
 from packetlib import chord as chordpkt
 
@@ -41,8 +42,10 @@ class RemoteNode(chordnode.ChordNode):
 
         if existing_socket is not None:
             s = existing_socket
+            if not isinstance(existing_socket, peersocket.PeerSocket):
+                raise
         else:
-            s = commlib.ThreadsafeSocket(on_send)
+            s = peersocket.PeerSocket(on_send=on_send)
             s.connect(listener_addr)
             L.debug("Socket handle: %d", s.fileno())
 
@@ -60,22 +63,18 @@ class RemoteNode(chordnode.ChordNode):
                self.hash, self.chord_addr[0], self.chord_addr[1])
 
     def __str__(self):
-        try:
-            remote = self.peer_sock.getpeername()
-        except socket.error:    # closed connection
+        if self:
+            remote = self.peer_sock.remote
+        else:
             remote = ("0", 0)
         return "[%s<-remote@%s:%d(%s)->%s]" % (
             str(int(self.predecessor.hash)) if self.predecessor else None,
             remote[0], remote[1], self.compact,
             str(int(self.successor.hash))   if self.successor   else None)
 
-    def __nonzero__(self):
-        try:
-            self.peer_sock.getpeername()
-            self.peer_sock.fileno()
-            return True
-        except socket.error:    # closed connection
-            return False
+    @property
+    def is_valid(self):
+        return self.peer_sock.valid
 
     @property
     def is_alive(self):

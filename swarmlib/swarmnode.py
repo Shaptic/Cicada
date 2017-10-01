@@ -36,8 +36,8 @@ class SwarmPeer(object):
         self.peer = None    # the peer in the network, established on `bind()`
         self._read_queue = pktutils.ConditionQueue()
         self.hooks = {
-            "send": hooks.get("send", lambda *args: None),
-            "recv": hooks.get("recv", lambda *args: None),
+            "send": hooks.get("send", self.NOOP_RESPONSE),
+            "recv": hooks.get("recv", self.NOOP_RESPONSE),
         }
 
     def bind(self, hostname, port):

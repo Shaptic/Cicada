@@ -308,7 +308,7 @@ class VisualNode(swarmnode.SwarmPeer):
             return self.dest.peer.chord_addr
 
         @staticmethod
-        def from_bytes(src, sock, bs):
+        def from_bytes(src, peersock, bs):
             msg = packetlib.message.MessageContainer.unpack(bs)
             if msg.is_response:
                 dot_type = VisualNode.DotType.OUTBOUND_RESP
@@ -325,7 +325,7 @@ class VisualNode(swarmnode.SwarmPeer):
             except:
                 pass
 
-            dest = VisualNode._resolve(sock)
+            dest = VisualNode._resolve(peersock)
             if not dest: return None
             dot = VisualNode.Dot(msg, dot_type, src.sprite, dest.sprite)
             src.dots.add(dot)
@@ -383,23 +383,26 @@ class VisualNode(swarmnode.SwarmPeer):
                 return sp.peer
 
     @staticmethod
-    def _resolve(sock):
+    def _resolve(peersock):
         node = None
         try:
             # Either the remote is a `chord_addr` (if it accepted the
             # connection) or the remote is the `sockname` of a peer in another
             # peer.
-            remote = sock.getpeername()
+            remote = peersock.remote
             for sprite in VisualSprite.SPRITES:
                 if sprite.peer.listener == remote:
                     return sprite.peer
 
                 for peer in sprite.peer.peer.peers:
-                    if peer.peer_sock.getsockname() == remote:
+                    if peer.peer_sock.local == remote:
                         return sprite.peer
 
         except Exception, e:
+            import traceback
             print "_resolve() failure:", str(e)
+            traceback.print_exc()
+
         return node
 
 
