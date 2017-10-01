@@ -9,8 +9,8 @@ Features:
   - Safe & secure encryption among trusted peers
 
 ## Installation ##
-    $ git clone -b unoptimized https://github.com/Shaptic/Cicada.git
-    $ cd Cicada
+    $ git clone https://github.com/Shaptic/Cicada.git cicada
+    $ cd cicada
     $ ./vcicada
 
 ### Using Cicada in Your Application ###
