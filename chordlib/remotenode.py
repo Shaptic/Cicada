@@ -55,7 +55,7 @@ class RemoteNode(chordnode.ChordNode):
             h = routing.Hash(hashed=node_hash)
 
         self.peer_sock = s
-        self.last_ping = chordpkt.PongMessage(h, 1000)
+        self.last_msg = time.time()
         self.timeout = RemoteNode.PEER_TIMEOUT
 
         super(RemoteNode, self).__init__(h, listener_addr)
@@ -80,8 +80,4 @@ class RemoteNode(chordnode.ChordNode):
     def is_alive(self):
         """ Alive: received a PONG within the last `PEER_TIMEOUT` seconds.
         """
-        return self.last_ping.time + self.timeout >= time.time()
-
-    def die(self):
-        self.last_ping = chordpkt.PongMessage(self.hash, 1)
-        self.last_ping.time = time.time() - self.timeout - 1
+        return self.last_msg + self.timeout >= time.time()

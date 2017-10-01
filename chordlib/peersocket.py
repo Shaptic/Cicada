@@ -139,6 +139,7 @@ class PeerSocket(object):
         if not isinstance(addr, tuple) or len(addr) != 2:
             raise TypeError("expected (ip, port), got %s" % type(addr))
 
+        self.valid = True
         self._socket = ThreadsafeSocket()
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._socket.bind(addr)
@@ -151,6 +152,7 @@ class PeerSocket(object):
         if not isinstance(addr, tuple) or len(addr) != 2:
             raise TypeError("expected (ip, port), got %s" % type(addr))
 
+        self.valid = True
         self._socket = ThreadsafeSocket()
         self._socket.connect(addr)
         self._cache_all_properties()

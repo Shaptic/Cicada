@@ -206,14 +206,18 @@ class LocalNode(chordnode.ChordNode):
         return request, response
 
     def leave_ring(self):
+        self.peers = chutils.LockedSet()
+        self.heartbeat.stop_running()
+        self.stable.stop_running()
+        self.router.stop_running()
+        self.processor.stop_running()
+        self.heartbeat.join(100)
+        self.stable.join(100)
+        self.router.join(100)
+        self.processor.join(100)
+
         for peer in self.peers.lockfree_iter():
             self.processor.shutdown_socket(peer.peer_sock)
-
-        self.peers = chutils.LockedSet()
-        self.stable.stop_running()
-        self.heartbeat.stop_running()
-        self.stable.join(1000)
-        self.heartbeat.join()
 
         self.predecessor = None
         self.successor = None
@@ -374,19 +378,20 @@ class LocalNode(chordnode.ChordNode):
     def on_info_response(self, sock, msg):
         """ Updates (or creates) a peer with up-to-date properties.
         """
-        response = chordpkt.InfoResponse.unpack(msg.data)
         node = self._peerlist_contains(sock)
         if not node:
             L.warning("Unknown socket source? %s:%d" % sock.remote)
             node = self.create_peer(response.sender.hash,
                                     response.sender.chord_addr, socket=sock)
 
+        response = chordpkt.InfoResponse.unpack(msg.data)
         L.info("Received info from a peer: %s", response.sender)
         L.info("    Successor on: %s:%d",   *response.successor.chord_addr)
         L.info("    Predecessor on: %s:%d", *response.predecessor.chord_addr)
 
         node.predecessor = response.predecessor
         node.successor = response.successor
+        node.last_msg = response.time
         return node
 
     def on_lookup_request(self, sock, msg):
@@ -590,7 +595,6 @@ class LocalNode(chordnode.ChordNode):
             packetlib.MessageType.MSG_CH_INFO:      (self.on_info_request,   0),
             packetlib.MessageType.MSG_CH_NOTIFY:    (self.on_notify_request, 0),
             packetlib.MessageType.MSG_CH_LOOKUP:    (self.on_lookup_request, 0),
-            packetlib.MessageType.MSG_CH_PING:      (self.heartbeat.on_ping, 0),
         }
 
         for msg_type, params in handlers.iteritems():

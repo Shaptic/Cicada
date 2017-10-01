@@ -44,6 +44,7 @@ class InfoResponse(message.BaseMessage):
         self.sender = sender
         self.predecessor = pred
         self.successor = succ
+        self.time = time.time()
 
     def pack(self):
         return struct.pack('!' + self.FORMAT,
@@ -275,73 +276,6 @@ class LookupResponse(message.BaseMessage):
         return "<LOOKUPr %d | from=%d,result=%d,%s:%d,hops=%d>" % (
                self.lookup, self.sender, self.mapped, self.listener[0],
                self.listener[1], self.hops)
-
-
-class StateMessage(message.BaseMessage):
-    RAW_FORMAT = [
-        PackedNode.EMBED_FORMAT,    # sender peer
-        "H",                        # state variable
-    ]
-    TYPE = message.MessageType.MSG_CH_STATE
-
-    def __init__(self, sender, state):
-        self.sender = sender
-        self.state = state.value if isinstance(state, enum.Enum) else int(state)
-
-    def pack(self):
-        return struct.pack('!' + self.FORMAT,
-                           PackedNode(self.sender, self.sender.predecessor,
-                                      self.sender.successor).pack(),
-                           self.state)
-
-    @classmethod
-    def unpack(cls, bs):
-        sender, bs = PackedNode.unpack(bs)
-        state, bs = message.MessageContainer.extract_chunk(cls.RAW_FORMAT[-1],
-                                                           bs, 0)
-        return StateMessage(sender, state)
-
-
-class PingMessage(message.BaseMessage):
-    """ A heartbeat message pair that expects a matching value in the response.
-    """
-    RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,
-        "I",    # the pong message should have a matching 8-byte value
-    ]
-    TYPE = message.MessageType.MSG_CH_PING
-    RESPONSE = False
-
-    def __init__(self, sender, iv=None):
-        self.sender = sender
-        self.value = random.randint(1000, 2 ** 31) if not iv else iv
-
-    def pack(self):
-        return struct.pack('!' + self.FORMAT,
-                           PackedHash(self.sender).pack(),
-                           self.value)
-
-    @classmethod
-    def unpack(cls, bs):
-        sender, bs = PackedHash.unpack(bs)
-        v, _ = message.MessageContainer.extract_chunk(cls.RAW_FORMAT[1], bs, 0)
-        return cls(sender, v)
-
-    def __repr__(self):
-        return "<%s | from=%d,val=%d>" % (message.MessageType.LOOKUP[self.TYPE],
-                                          self.sender, self.value)
-
-
-class PongMessage(PingMessage):
-    """ A response to a PING message.
-    """
-    RAW_FORMAT = PingMessage.RAW_FORMAT
-    TYPE = message.MessageType.MSG_CH_PONG
-    RESPONSE = True
-
-    def __init__(self, sender, ping_value):
-        super(PongMessage, self).__init__(sender, iv=ping_value)
-        self.time = time.time()
 
 
 def generic_unpacker(msg):

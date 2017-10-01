@@ -35,10 +35,7 @@ class MessageType(object):
     MSG_CH_INFO     = MSG_CH_JOIN   + 1
     MSG_CH_NOTIFY   = MSG_CH_INFO   + 1
     MSG_CH_LOOKUP   = MSG_CH_NOTIFY + 1
-    MSG_CH_PING     = MSG_CH_LOOKUP + 1
-    MSG_CH_PONG     = MSG_CH_PING   + 1
-    MSG_CH_STATE    = MSG_CH_PONG  + 1
-    MSG_CH_QUIT     = MSG_CH_STATE  + 1
+    MSG_CH_QUIT     = MSG_CH_LOOKUP + 1
     MSG_CH_ERROR    = 0x00FF
     MSG_CH_MAX      = 0x00FF                # last Chord-type message
 
@@ -50,9 +47,6 @@ class MessageType(object):
         MSG_CH_NOTIFY:  "NOTIFY",
         MSG_CH_LOOKUP:  "LOOKUP",
         MSG_CH_INFO:    "INFO",
-        MSG_CH_PING:    "PING",
-        MSG_CH_PONG:    "PONG",
-        MSG_CH_STATE:   "STATE",
         MSG_CH_QUIT:    "QUIT",
         MSG_CH_ERROR:   "ERROR",
     }

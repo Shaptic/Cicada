@@ -306,8 +306,8 @@ class SocketProcessor(chutils.InfiniteThread):
 
         # Add this request to the current stream for the peer.
         if not self.prepare_request(peer, msg, evt):
-            import pdb; pdb.set_trace()
-            raise ValueError("The request cannot be prepared on this socket.")
+            peer.valid = False
+            return False
 
         # Send the request and wait for the response.
         here, there = peer.local, peer.remote
@@ -380,3 +380,6 @@ class SocketProcessor(chutils.InfiniteThread):
             if not peersock.valid:
                 L.error("PeerSocket (#%d) errored out." % peersock.fileno())
                 self.on_shutdown(peersock)
+
+        self._peer_streams = dict(filter(lambda pair: pair[0].valid,
+                                         self._peer_streams.iteritems()))

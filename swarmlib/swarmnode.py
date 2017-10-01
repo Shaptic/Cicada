@@ -51,6 +51,10 @@ class SwarmPeer(object):
         self.peer.join_ring((network_host, network_port), timeout)
 
     @bind_first
+    def disconnect(self):
+        self.peer.leave_ring()
+
+    @bind_first
     def broadcast(self, data):
         """ Sends a data packet to every peer in the network.
         """

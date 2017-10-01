@@ -315,10 +315,6 @@ class VisualNode(swarmnode.SwarmPeer):
             else:
                 dot_type = VisualNode.DotType.OUTBOUND_REQT
 
-            if msg.type in (packetlib.message.MessageType.MSG_CH_PING,
-                            packetlib.message.MessageType.MSG_CH_PONG):
-                return None
-
             try:
                 pkt = packetlib.chord.generic_unpacker(msg)
                 src.log.write(repr(pkt))
@@ -513,12 +509,18 @@ if __name__ == "__main__":
 
                 # Disconnect the selected node from the ring.
                 elif evt.key == pygame.K_d:
+                    def fixer():
+                        sel.peer.disconnect()
+                        listener = ring[i].peer.chord_addr
+                        ring[i].peer = VisualNode(ring[i])
+                        ring[i].peer.bind(*listener)
+                        ring[i].build()
+
                     sel = get_selected(ring)
                     if not sel: continue
-                    print "Leaving %s from the ring." % sel.peer
-                    threading.Thread(target=(
-                        lambda sel=sel: sel.peer.leave_ring()
-                    )).start()
+                    i = ring.index(sel)
+                    print "Leaving %s[%d] from the ring." % (sel.peer, i)
+                    threading.Thread(target=fixer).start()
 
                 # Interconnect nodes randomly.
                 elif evt.key == pygame.K_r:
