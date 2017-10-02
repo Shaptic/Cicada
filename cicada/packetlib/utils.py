@@ -72,7 +72,7 @@ class ConditionQueue(object):
 
     def __exit__(self, exc_type, exc_value, traceback):
         self._queue_cond.release()
-        return True    # suppress exceptions
+        # return True    # suppress exceptions
 
     def __len__(self):
         return len(self.queue)

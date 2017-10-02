@@ -84,18 +84,16 @@ class LocalNode(chordnode.ChordNode):
         the binding address. This is because in Cicada we _use_ the binding
         address hash as the identifier of the node to route packets.
 
-        :data       the data to be hashed by this Chord node. It creates a
-                    unique identifier for the node.
-        :bind_addr  specifies the address to use for the listener socket.
+        :data           the data to be hashed by this Chord node. It creates a
+                        unique identifier for the node.
+        :bind_addr      specifies the address to use for the listener socket.
+        :on_send[=n/a]
+        :on_data[=n/a]
         """
-
-        # This socket is responsible for inbound connections (from new potential
-        # Peer nodes). It is always in an "accept" state in a separate thread.
         self.listener = peersocket.PeerSocket(on_send=on_send)
         self.listener.bind(bind_addr)
 
-        # This is the listener thread. When it receives a new socket, it will
-        # create a Peer object from it.
+        # Run listener thread with permanent "accept" state on above socket.
         L.info("Starting listener thread for %s", self.listener.local)
         self.listen_thread = commlib.ListenerThread(self.listener,
                                                     self.on_new_peer)
@@ -378,13 +376,14 @@ class LocalNode(chordnode.ChordNode):
     def on_info_response(self, sock, msg):
         """ Updates (or creates) a peer with up-to-date properties.
         """
+        response = chordpkt.InfoResponse.unpack(msg.data)
+
         node = self._peerlist_contains(sock)
         if not node:
             L.warning("Unknown socket source? %s:%d" % sock.remote)
             node = self.create_peer(response.sender.hash,
                                     response.sender.chord_addr, socket=sock)
 
-        response = chordpkt.InfoResponse.unpack(msg.data)
         L.info("Received info from a peer: %s", response.sender)
         L.info("    Successor on: %s:%d",   *response.successor.chord_addr)
         L.info("    Predecessor on: %s:%d", *response.predecessor.chord_addr)
@@ -399,7 +398,7 @@ class LocalNode(chordnode.ChordNode):
         """
         peer = self._peerlist_contains(sock)
         req = chordpkt.LookupRequest.unpack(msg.data)
-        if req.data: self.on_data_packet(req.data)
+        if req.data: self.on_data_packet(peer, req.data)
 
         def on_response(socket, request, value, result_node, response):
             """ A specialized handler to route the lookup response packet.

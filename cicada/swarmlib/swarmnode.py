@@ -1,5 +1,7 @@
 """ Establishes the user-facing API.
 """
+import struct
+
 import chordlib
 import chordlib.localnode as localnode
 
@@ -55,16 +57,14 @@ class SwarmPeer(object):
         self.peer.leave_ring()
 
     @bind_first
-    def broadcast(self, data):
+    def broadcast(self, data, visited=[]):
         """ Sends a data packet to every peer in the network.
         """
         peers = set(self.peer.routing_table.unique_iter(0))
 
-        import pdb; pdb.set_trace()
-        pkt = cicadapkt.BroadcastMessage(data, map(lambda x: x.hash, peers))
-        for peer in peers:
-            print "Sending %s to %s:%d." % (repr(pkt), peer.chord_addr[0],
-                                            peer.chord_addr[1])
+        pkt = cicadapkt.BroadcastMessage(data, map(lambda x: x.hash, peers),
+                                         visited=visited)
+        for peer in filter(lambda p: p.hash not in visited, peers):
             self.peer.lookup(peer.hash, self.NOOP_RESPONSE, None,
                              data=pkt.pack())
 
@@ -106,8 +106,26 @@ class SwarmPeer(object):
         """
         with self._read_queue:
             self._read_queue.wait()
-            pair = self._read_queue.pop()    # unpacked
-            return pair[0], pair[1], self._read_queue.ready
+            source, data = self._read_queue.pop()    # unpacked
+
+            # Process Cicada messages first.
+            # TODO: put this in a more sensible place.
+            msg_type, = struct.unpack("!H", data[:2])
+            if msg_type == cicadapkt.BroadcastMessage.SECONDARY_TYPE:
+                pkt = cicadapkt.BroadcastMessage.unpack(data)
+                pkt.visited.append(source.hash)     # sender has been visited
+                self.broadcast(pkt.data, pkt.visited)
+                data = pkt.data
+
+            elif msg_type == cicadapkt.DataMessage.SECONDARY_TYPE:
+                pkt = cicadapkt.DataMessage.unpack(data)
+                data = pkt.data
+
+            else:
+                import pdb; pdb.set_trace()
+                raise ValueError("Received unknown data packet.")
+
+            return source, data, self._read_queue.ready
 
     @bind_first
     def get_route(self, value, on_result):
@@ -127,8 +145,13 @@ class SwarmPeer(object):
     def hash(self):
         return self.peer.hash
 
-    def _on_data(self, data):
-        self._read_queue.push(data)
+    @property
+    @bind_first
+    def peers(self):
+        return self.peer.peers
+
+    def _on_data(self, source_peer, data):
+        self._read_queue.push((source_peer, data))
 
     def __repr__(self):
         return repr(self.peer)
