@@ -4,9 +4,9 @@ A resilient communication framework with peer-to-peer routing.
 Features:
 
   - Lower bandwidth requirements for service providers
-  - Improved user performance
   - Highly-efficient and resilient routing between users
   - Safe & secure encryption among trusted peers
+  - Improved user performance
 
 ## Installation ##
     $ git clone https://github.com/Shaptic/Cicada.git cicada
@@ -16,7 +16,7 @@ Features:
 ### Using Cicada in Your Application ###
 _Cicada_ in itself isn't an application in the sense that it doesn't really
 _do_ anything. Of course, there are examples included for you to toy with to
-see it in action (see `examples/`), but at its core it's merely a protocol for
+see it in action (see `samples/`), but at its core it's merely a protocol for
 you to take advantage of for your application.
 
 ## Advanced Features ##
@@ -64,15 +64,15 @@ small price to pay in ensuring that your data isn't messed with in-transit.
 
 To use this feature, just pass `--duplicate [number of duplicate paths]` to the
 _Cicada_ command-line, or pass the keyword argument `duplicates` to the
-`CicadaNode` API object.
+`SwarmPeer` API object.
 
     $ cicada localhost:10000 --join 10.0.0.1:50000 --duplicate 3
 
 This can further be customized on a _per-message_ basis (which obviously requires full API interaction):
 
-    node = CicadaNode("localhost", 10000)
+    node = SwarmPeer("localhost", 10000)
     node.connect("10.0.0.1", 50000)
-    node.sendall("hello!", duplicates=5)
+    node.send(("10.0.0.2", 50000), "hello!", duplicates=5)
 
 ### Custom Routing ###
-A single swarm node can be a part of _multiple swarms_, allowing it to act as a sort of "switch."
+A single swarm peer can be a part of _multiple swarms_, allowing it to act as a sort of "switch."

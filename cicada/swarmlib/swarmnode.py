@@ -69,14 +69,15 @@ class SwarmPeer(object):
                              data=pkt.pack())
 
     @bind_first
-    def send(self, target, data):
+    def send(self, target, data, duplicates=0):
         """ Sends a data packet into the Cicada network.
 
         We wrap the data into a special routing packet and send it through the
         standard underlying DHT protocol.
 
-        :target     either a 2-tuple (hostname, port) or another `SwarmPeer`
-        :data       the raw data to pack and send
+        :target         either a 2-tuple (hostname, port) or another `SwarmPeer`
+        :data           the raw data to pack and send
+        :duplicates[=0] the amount of extra peers to route the message through
         """
         if isinstance(target, tuple) and len(target) == 2:
             dest = "%s:%d" % target
@@ -90,7 +91,15 @@ class SwarmPeer(object):
                             type(target))
 
         pkt = cicadapkt.DataMessage.make_packet(data)
-        self.peer.lookup(dest, self.NOOP_RESPONSE, None, data=pkt.pack())
+        peer = self.peer.lookup(dest, self.NOOP_RESPONSE, None, data=pkt.pack())
+
+        exclusion = set(peer)
+        for i in xrange(duplicates):
+            try:
+                peer = self.peer.lookup(dest, self.NOOP_RESPONSE, None,
+                                        data=pkt.pack(), exclude=exclusion)
+                exclusion.add(peer)
+            except: break
 
     @bind_first
     def recv(self):

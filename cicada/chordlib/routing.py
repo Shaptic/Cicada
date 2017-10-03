@@ -9,9 +9,9 @@ from cicada.chordlib import search
 from cicada.chordlib import utils, L
 
 
-HASHFN = hashlib.md5#hashlib.sha256
+HASHFN = hashlib.sha256
 def chord_hash(data):
-    return HASHFN(data).digest()[:2]
+    return HASHFN(data).digest()
 
 
 HASHLEN  = len(chord_hash("0"))

@@ -18,7 +18,6 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(".."))
-sys.path.append(os.path.abspath("../cicada"))
 
 import json
 import random
@@ -36,7 +35,7 @@ from   cicada.chordlib.utils     import InfiniteThread
 def get_console_size():
     return map(int, os.popen('stty size', 'r').read().split())
 
-def send_message(peer, sender, content, to=""):
+def send_message(config, peer, sender, content, to=""):
     """ Broadcasts a packed message on the peer, unless it's a PM.
     """
     message = {
@@ -45,7 +44,7 @@ def send_message(peer, sender, content, to=""):
         "to": to
     }
     if not to:
-        peer.broadcast(json.dumps(message))
+        peer.broadcast(json.dumps(message), duplicates=config.duplicates)
     else:
         raise NotImplementedError("can't PM yet")
 
@@ -54,6 +53,21 @@ def parse_message(raw):
     """
     raw = json.loads(raw)
     return raw["sender"], raw["to"], raw["message"]
+
+
+class Config(object):
+    """ Manages the command-line configuration.
+    """
+    def __init__(self):
+        self.parser = argparse.ArgumentParser(description="")
+        self.parser.add_argument("-r", "--resilience", dest="duplicates",
+                                 default=0, type=int,
+                                 help="")
+
+        self.args = self.parser.parse_args()
+
+    def __getattr__(self, attr):
+        return getattr(self.args, attr)
 
 
 class TextEntry(object):
@@ -107,6 +121,7 @@ class Parser(object):
     """
     def __init__(self, host, window, user):
         super(Parser, self).__init__()
+        self.config = Config()
         self.output = window
         self.quit = False
         self.host = host
@@ -130,7 +145,7 @@ class Parser(object):
                 fn(args)
                 return
 
-        send_message(self.host, self.user.username, text)
+        send_message(self.config, self.host, self.user.username, text)
         self.output.writeln(text, self.user.username)
 
     def _connect_handler(self, args):
@@ -157,7 +172,7 @@ class Parser(object):
 
     def _msg_handler(self, args):
         target, text = args.split(' ', 1)
-        send_message(self.host, self.user.username, text,
+        send_message(self.config, self.host, self.user.username, text,
                      channel="#general", to=target)
 
 

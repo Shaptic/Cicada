@@ -450,6 +450,9 @@ class LocalNode(chordnode.ChordNode):
             is still reported accordingly, which allows the caller to check if
             the data actually was actually routed to its intended destination,
             or merely its nearest hop.
+
+        :returns        the peer representing the nearest hop used for the
+                        lookup request.
         """
         def on_lookup_response(secondary_handler, response_socket,
                                response_message):
@@ -491,6 +494,8 @@ class LocalNode(chordnode.ChordNode):
                                functools.partial(on_lookup_response,
                                                  on_response),
                                wait_time=timeout)
+
+        return nearest
 
     def stabilize(self):
         """ Runs the stabilization algorithm.
@@ -690,8 +695,6 @@ class LocalNode(chordnode.ChordNode):
         """ Adds a newly connected peer to the internal socket processor.
         """
         L.debug("New peer from %s:%d", *new_peersock.remote)
-        print "New peer on %s from %s:%d" % (self, new_peersock.remote[0],
-                                             new_peersock.remote[1])
         self.processor.add_socket(new_peersock, self.process)
 
     @property
