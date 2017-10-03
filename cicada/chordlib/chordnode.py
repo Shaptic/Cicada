@@ -7,9 +7,9 @@ import random
 import time
 import enum
 
-from chordlib import L
-from chordlib import routing
-from chordlib import utils as chutils
+from ..chordlib import L
+from ..chordlib import routing
+from ..chordlib import utils as chutils
 
 
 class Stabilizer(chutils.InfiniteThread):

@@ -14,19 +14,20 @@ import select
 import random
 import time
 
-from chordlib import L  # the logfile
-from chordlib import utils as chutils
-from chordlib import routing
-from chordlib import heartbeat
-from chordlib import peersocket, commlib
-from chordlib import chordnode, remotenode
+from .. import chordlib
+from .. import packetlib
 
-import chordlib
-import packetlib
-import packetlib.debug
-from   packetlib import message
-from   packetlib import chord as chordpkt
-from   packetlib import utils as pktutils
+from ..chordlib  import L  # the logfile
+from ..chordlib  import utils as chutils
+from ..chordlib  import routing
+from ..chordlib  import heartbeat
+from ..chordlib  import peersocket, commlib
+from ..chordlib  import chordnode, remotenode
+
+from ..packetlib import debug
+from ..packetlib import message
+from ..packetlib import chord as chordpkt
+from ..packetlib import utils as pktutils
 
 
 def handle_failed_request(fn):
@@ -396,8 +397,12 @@ class LocalNode(chordnode.ChordNode):
     def on_lookup_request(self, sock, msg):
         """ Forwards to next closest node or looks up request.
         """
-        peer = self._peerlist_contains(sock)
         req = chordpkt.LookupRequest.unpack(msg.data)
+        peer = self._peerlist_contains(sock)
+
+        if not peer:
+            import pdb; pdb.set_trace()
+
         if req.data: self.on_data_packet(peer, req.data)
 
         def on_response(socket, request, value, result_node, response):

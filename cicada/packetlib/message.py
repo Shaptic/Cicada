@@ -9,15 +9,15 @@ import struct
 import hashlib
 import collections
 
-from packetlib.errors import ExceptionType
+from ..packetlib.errors import ExceptionType
 
-from packetlib import debug
-from packetlib import utils as pktutils
+from ..packetlib import debug
+from ..packetlib import utils as pktutils
 
-from chordlib  import L
-from chordlib  import routing
-from chordlib  import chordnode
-from chordlib  import utils as chutils
+from ..chordlib  import L
+from ..chordlib  import routing
+from ..chordlib  import chordnode
+from ..chordlib  import utils as chutils
 
 class MessageBlob(enum.Enum):
     """ Describes a particular "chunk" in a message.

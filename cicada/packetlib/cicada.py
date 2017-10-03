@@ -4,8 +4,9 @@
 
 import struct
 
-from packetlib import message
-from chordlib  import routing
+from .           import message
+from ..chordlib  import routing
+
 
 class BroadcastMessage(message.BaseMessage):
     """ A raw data packet to broadcast on the network.

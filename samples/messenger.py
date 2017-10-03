@@ -200,7 +200,7 @@ class OutputWindow(object):
             lines.append(chunk)
 
         for line in lines:
-            print "%s | %s" % (username.rjust(self.uname_off), line)
+            print "\r%s | %s" % (username.rjust(self.uname_off), line)
 
 
 def main():

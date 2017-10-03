@@ -1,13 +1,13 @@
 #!/usr/bin/env python2
 import pygame
-import visualizer.math
+from ..visualizer import math as vmath
 
 class Window(object):
     WIDTH  = 800
     HEIGHT = 600
 
     def __init__(self):
-        self.size = visualizer.math.Vector(self.WIDTH, self.HEIGHT)
+        self.size = vmath.Vector(self.WIDTH, self.HEIGHT)
         self.screen = pygame.display.set_mode(self.size.t)
         pygame.display.set_caption("Cicada Simulator")
 
@@ -23,4 +23,4 @@ class Window(object):
 
     @property
     def center(self):
-        return visualizer.math.Vector(self.size.w / 2, self.size.h / 2)
+        return vmath.Vector(self.size.w / 2, self.size.h / 2)

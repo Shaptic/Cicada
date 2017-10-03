@@ -8,12 +8,12 @@ import struct
 import random
 import collections
 
-from chordlib  import routing
-from chordlib  import chordnode
-from packetlib import message
-from packetlib import utils as pktutils
+from ..chordlib  import routing
+from ..chordlib  import chordnode
+from ..packetlib import message
+from ..packetlib import utils as pktutils
 
-from packetlib.message import PackedHash, PackedAddress, PackedNode
+from ..packetlib.message import PackedHash, PackedAddress, PackedNode
 
 
 class InfoRequest(message.BaseMessage):

@@ -5,8 +5,8 @@ import math
 import enum
 import hashlib
 
-from chordlib import search
-from chordlib import utils, L
+from cicada.chordlib import search
+from cicada.chordlib import utils, L
 
 
 HASHFN = hashlib.md5#hashlib.sha256

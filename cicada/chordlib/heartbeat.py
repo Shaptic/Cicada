@@ -4,10 +4,10 @@ import random
 import socket
 import functools
 
-from   chordlib  import commlib, L
-from   packetlib import message
-import chordlib.utils   as chutils
-import packetlib.chord  as chordpkt
+from ..chordlib  import commlib, L
+from ..packetlib import message
+from ..chordlib  import utils as chutils
+from ..packetlib import chord as chordpkt
 
 
 class HeartbeatManager(object):

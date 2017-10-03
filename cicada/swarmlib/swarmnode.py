@@ -2,14 +2,14 @@
 """
 import struct
 
-import chordlib
-import chordlib.localnode as localnode
+from ..         import chordlib
+from ..         import packetlib
 
-import packetlib
-import packetlib.message as pktmsg
-import packetlib.chord   as chordpkt
-import packetlib.utils   as pktutils
-import packetlib.cicada  as cicadapkt
+from ..chordlib  import localnode
+from ..packetlib import message as pktmsg
+from ..packetlib import chord   as chordpkt
+from ..packetlib import utils   as pktutils
+from ..packetlib import cicada  as cicadapkt
 # import packetlib.kamelia as kamelpkt
 
 

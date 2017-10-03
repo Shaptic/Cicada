@@ -6,12 +6,12 @@ import random
 import time
 import sys
 
-import chordlib.utils  as chutils
-import packetlib.chord as chordpkt
+from ..chordlib  import utils as chutils
+from ..packetlib import chord as chordpkt
 
-from   chordlib  import L
-from   chordlib  import peersocket
-from   packetlib import message
+from   ..chordlib  import L
+from   ..chordlib  import peersocket
+from   ..packetlib import message
 
 
 class ListenerThread(chutils.InfiniteThread):

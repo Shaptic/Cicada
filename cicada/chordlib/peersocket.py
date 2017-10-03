@@ -3,8 +3,8 @@ import select
 import struct
 import threading
 
-from   chordlib  import L
-from   packetlib import message
+from ..chordlib  import L
+from ..packetlib import message
 
 
 class ThreadsafeSocket(object):

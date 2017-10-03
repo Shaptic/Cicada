@@ -10,11 +10,11 @@ import time
 import select
 import socket
 
-from chordlib  import commlib
-from chordlib  import chordnode, L
-from chordlib  import peersocket
-from chordlib  import routing
-from packetlib import chord as chordpkt
+from ..chordlib  import commlib
+from ..chordlib  import chordnode, L
+from ..chordlib  import peersocket
+from ..chordlib  import routing
+from ..packetlib import chord as chordpkt
 
 class RemoteNode(chordnode.ChordNode):
     """ Represents a remote Chord node in the hash ring.
