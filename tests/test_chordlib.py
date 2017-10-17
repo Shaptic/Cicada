@@ -1,40 +1,48 @@
-from ..packetlib import debug   as D
-from ..packetlib import message as M
-from ..chordlib  import routing as R
-
-h = R.Hash(value="sender")
-n = M.MessageContainer(M.MessageType.MSG_CH_NOTIFY, h,
-                       data="hey babes\x77hey", sequence=2884)
-print n; print
-print repr(n.pack());
-print "len=%d" % len(n.pack()); print
-n.dump()
-print
-D.dump_packet(n.pack(), n.full_format())
-assert n.pack() == n.unpack(n.pack()).pack()
-
-import sys
 import random
 import string
-from   ..chordlib.routing import chord_hash, Hash
+import unittest
 
-HASH_COUNT = 1000
-print "Running hashing test with %d hashes." % HASH_COUNT
-for i in xrange(HASH_COUNT):
-    start = ''.join([
-        random.choice(string.lowercase) for _ in xrange(random.randint(10, 20))
-    ])
+import sys
+sys.path.append(".")
 
-    print "  Trying value=%s...\r" % start,
-    h = Hash(value=start)
-    assert Hash.pack_hash(str(h)) == h.parts, \
-           "pack check failed for value=%s, hash=%s, calc=%s" % (
-           start, h.parts, Hash.pack_hash(str(h)))
 
-print
-print "Hashing test passed."
-print "All unit tests passed!"
-print "Running stress test."
+from cicada.packetlib import debug   as D
+from cicada.packetlib import message as M
+from cicada.chordlib  import routing as R
+
+
+class TestMessagePacking(unittest.TestCase):
+    """ Tests that the `.pack()` and `.unpack()` methods of each message works.
+    """
+    def test_messagecontainer(self):
+        h = R.Hash(value="sender")
+        n = M.MessageContainer(M.MessageType.MSG_CH_NOTIFY, h,
+                               data="hey babes\x77hey", sequence=2884)
+        # n.dump()
+        # D.dump_packet(n.pack(), n.full_format())
+        self.assertEqual(n.pack(), n.unpack(n.pack()).pack())
+
+
+class TestHashing(unittest.TestCase):
+    """ Tests that packing and unpacking hashes works.
+    """
+    HASH_COUNT = 1000
+
+    def test_hashes(self):
+        for i in xrange(self.HASH_COUNT):
+            start = ''.join([
+                random.choice(string.lowercase) for _ in xrange(
+                    random.randint(10, 20)
+                )
+            ])
+
+            h = R.Hash(value=start)
+            self.assertEqual(R.Hash.pack_hash(str(h)), h.parts)
+            # print "pack check failed for value=%s, hash=%s, calc=%s" % (
+            #        start, h.parts, Hash.pack_hash(str(h)))
+
+if __name__ == '__main__':
+    unittest.main()
 
 # Stress testing process:
 #
@@ -43,6 +51,7 @@ print "Running stress test."
 #  - Ensure that after some time, each one's successor pointer is as close as it
 #    can be, and likewise for the predecessor pointer.
 #
+"""
 import sys
 import time
 import pprint
@@ -168,4 +177,4 @@ for peer in peers:
     peer.listen_thread.stop_running()
     peer.stable.stop_running()
     peer.listener.close()
-
+"""
