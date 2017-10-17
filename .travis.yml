@@ -1,8 +1,9 @@
 language: python
 python:
   - 2.7
-install:
+install: true
 script:
-  - ls -r
+  - ls -R
   - ls cicada/tests
+  - python -c "import pkgutil; import sys; from pprint import pprint; pprint(sys.path); pprint([name for _, name, _ in pkgutil.walk_packages('.')])"
   - python -m cicada.tests.test_chordlib
