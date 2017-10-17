@@ -83,10 +83,11 @@ class ReadQueue(object):
                 self.queue.append(pkt)
 
             except message.UnpackException, e:
-                import packetlib.debug
-                L.warning("Failed to parse inbound message: %s",
-                          repr(self.pending))
-                packetlib.debug.hexdump(self.pending)
+                import traceback
+                from ..packetlib import debug
+                print "Failed to parse inbound message:", str(e)
+                traceback.print_exc()
+                debug.hexdump(self.pending)
                 raise
 
     @property

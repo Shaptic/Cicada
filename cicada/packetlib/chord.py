@@ -33,8 +33,8 @@ class InfoResponse(message.BaseMessage):
         """ Creates internal structures for the INFO message.
 
         :sender     a `ChordNode` instance of the peer sending their info
-        :pred       the peer's predecessor node
-        :succ       the peer's successor node
+        :pred       the peer's predecessor node (or `None`)
+        :succ       the peer's successor node (or `None`)
         """
         if any([not isinstance(x, chordnode.ChordNode) and x is not None \
                 for x in (sender, pred, succ)]):
@@ -57,7 +57,7 @@ class InfoResponse(message.BaseMessage):
         return cls(node.node, node.predecessor, node.successor)
 
     def __repr__(self):
-        return "<INFOr | from=%d,pred=%d,succ=%d>" % (self.sender.hash,
+        return "<INFOr | hash=%d,pred=%d,succ=%d>" % (self.sender.hash,
             0 if not self.predecessor else self.predecessor.hash,
             0 if not self.successor   else self.successor.hash)
 
@@ -72,35 +72,27 @@ class JoinRequest(message.BaseMessage):
 
     TYPE = message.MessageType.MSG_CH_JOIN
     RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,    # joinee hash
         PackedAddress.EMBED_FORMAT  # joinee listener
     ]
 
-    def __init__(self, sender_hash, listener_addr):
+    def __init__(self, listener_addr):
         if not isinstance(listener_addr, tuple) or len(listener_addr) != 2:
             raise TypeError("Please pass a two-tuple address!")
 
-        self.sender = sender_hash
         self.listener = listener_addr
 
     def pack(self):
         return struct.pack('!' + self.FORMAT,
-                           PackedHash(self.sender).pack(),
                            PackedAddress(*self.listener).pack())
 
     @classmethod
     def unpack(cls, bytestream):
-        shash, bytestream = PackedHash.unpack(bytestream)
-        addr, bytestream = PackedAddress.unpack(bytestream)
-
-        assert not bytestream, \
-            "Unpacked JR, but bytes remain: %s" % repr(bytestream)
-
-        return cls(shash, addr)
+        addr, bs = PackedAddress.unpack(bytestream)
+        assert not bs, "Unpacked JR, but bytes remain: %s" % repr(bs)
+        return cls(addr)
 
     def __repr__(self):
-        return "<JOIN | from=%d,on=%s:%d>" % (self.sender, self.listener[0],
-                                              self.listener[1])
+        return "<JOIN | on=%s:%d>" % self.listener
 
 
 class JoinResponse(InfoResponse):
@@ -173,8 +165,8 @@ class NotifyResponse(message.BaseMessage):
     TYPE = message.MessageType.MSG_CH_NOTIFY
     RESPONSE = True
 
-    def __init__(self, set_predecessor):
-        self.set_pred = set_predecessor
+    def __init__(self, pred_is_set):
+        self.set_pred = pred_is_set
 
     def pack(self):
         return struct.pack('!' + self.FORMAT, self.set_pred)
@@ -190,26 +182,21 @@ class NotifyResponse(message.BaseMessage):
 
 class LookupRequest(message.BaseMessage):
     RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,    # sender hash
         PackedHash.EMBED_FORMAT,    # hash to look up
         "I",                        # length of data to send, if any
         "%ds",                      # additional data, if any
     ]
     TYPE = message.MessageType.MSG_CH_LOOKUP
 
-    def __init__(self, sender_hash, lookup_hash, data=""):
-        if any([not isinstance(x, routing.Hash) for x in (
-            sender_hash, lookup_hash)
-        ]):
+    def __init__(self, lookup_hash, data=""):
+        if not isinstance(lookup_hash, routing.Hash):
             raise TypeError("Please provide a Hash object.")
 
-        self.sender = sender_hash
         self.lookup = lookup_hash
         self.data = data
 
     def pack(self):
         return struct.pack('!' + self.FORMAT % len(self.data),
-                           PackedHash(self.sender).pack(),
                            PackedHash(self.lookup).pack(),
                            len(self.data), self.data)
 
@@ -218,21 +205,19 @@ class LookupRequest(message.BaseMessage):
         get = lambda f: message.MessageContainer.extract_chunk(f, bs, offset)
 
         offset = 0
-        sender, bs     = PackedHash.unpack(bs)
         lookup, bs     = PackedHash.unpack(bs)
         dlen,   offset = get(cls.RAW_FORMAT[2])
         data,   offset = get(cls.RAW_FORMAT[3] % dlen)
 
         assert bs[offset:] == "", "Remaining bytes?? %s" % bs[offset:]
-        return LookupRequest(sender, lookup, data)
+        return LookupRequest(lookup, data)
 
     def __repr__(self):
-        return "<LOOKUP | to=%d,value=%d>" % (self.sender, self.lookup)
+        return "<LOOKUP | value=%d>" % (self.lookup)
 
 
 class LookupResponse(message.BaseMessage):
     RAW_FORMAT = [
-        PackedHash.EMBED_FORMAT,    # sender hash
         PackedHash.EMBED_FORMAT,    # lookup hash
         PackedHash.EMBED_FORMAT,    # resulting mapped node hash
         PackedAddress.EMBED_FORMAT, # resulting mapped node listener
@@ -241,14 +226,12 @@ class LookupResponse(message.BaseMessage):
     TYPE = message.MessageType.MSG_CH_LOOKUP
     RESPONSE = True
 
-    def __init__(self, sender_hash, lookup_hash, mapped_hash, mapped_address,
-                 hops=1):
+    def __init__(self, lookup_hash, mapped_hash, mapped_address, hops=1):
         if any([not isinstance(x, routing.Hash) for x in (
-            sender_hash, lookup_hash, mapped_hash)
+            lookup_hash, mapped_hash)
         ]):
             raise TypeError("Please provide a Hash object.")
 
-        self.sender = sender_hash
         self.lookup = lookup_hash
         self.mapped = mapped_hash
         self.listener = mapped_address
@@ -256,7 +239,6 @@ class LookupResponse(message.BaseMessage):
 
     def pack(self):
         return struct.pack('!' + self.FORMAT,
-            PackedHash(self.sender).pack(),
             PackedHash(self.lookup).pack(),
             PackedHash(self.mapped).pack(),
             PackedAddress(*self.listener).pack(),
@@ -264,7 +246,6 @@ class LookupResponse(message.BaseMessage):
 
     @classmethod
     def unpack(cls, bs):
-        node,    bs = PackedHash.unpack(bs)
         lookup,  bs = PackedHash.unpack(bs)
         mapped,  bs = PackedHash.unpack(bs)
         address, bs = PackedAddress.unpack(bs)
@@ -273,8 +254,8 @@ class LookupResponse(message.BaseMessage):
         return LookupResponse(node, lookup, mapped, address)
 
     def __repr__(self):
-        return "<LOOKUPr %d | from=%d,result=%d,%s:%d,hops=%d>" % (
-               self.lookup, self.sender, self.mapped, self.listener[0],
+        return "<LOOKUPr %d | result=%d,%s:%d,hops=%d>" % (
+               self.sender, self.mapped, self.listener[0],
                self.listener[1], self.hops)
 
 

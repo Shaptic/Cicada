@@ -210,10 +210,10 @@ class LocalNode(chordnode.ChordNode):
         self.stable.stop_running()
         self.router.stop_running()
         self.processor.stop_running()
-        self.heartbeat.join(100)
-        self.stable.join(100)
-        self.router.join(100)
-        self.processor.join(100)
+        self.heartbeat.join(3)
+        self.stable.join(3)
+        self.router.join(3)
+        self.processor.join(3)
 
         for peer in self.peers.lockfree_iter():
             self.processor.shutdown_socket(peer.peer_sock)
@@ -237,15 +237,14 @@ class LocalNode(chordnode.ChordNode):
         L.info("    We are: %s", self)
         L.info("    Our predecessor: %s",    self.predecessor)
         L.info("    Our successor: %s",      self.successor)
-        L.info("    The peer's hash is: %d", req.sender)
+        L.info("    The peer's hash is: %d", msg.sender)
 
         # We were alone, and now we have a friend.
         if not self.successor:
-            self.successor = self.create_peer(req.sender, req.listener, sock)
-            response = chordpkt.JoinResponse.make_packet(self, self,
-                                                         self.predecessor,
-                                                         self.successor,
-                                                         original=msg)
+            self.successor = self.create_peer(msg.sender, req.listener, sock)
+            response = chordpkt.JoinResponse.make_packet(
+                self.hash, self, self, self.predecessor,
+                self.successor, original=msg)
             self.processor.response(sock, response)
             retval = response
 
@@ -253,17 +252,16 @@ class LocalNode(chordnode.ChordNode):
         # belongs in the range (peer.hash, successor.hash].
         else:
             def handler(sock, orig, result, msg):
-                response = chordpkt.JoinResponse.make_packet(result, self,
-                                                             self.predecessor,
-                                                             self.successor,
-                                                             original=orig)
+                response = chordpkt.JoinResponse.make_packet(
+                    self.hash, result, self, self.predecessor,
+                    self.successor, original=orig)
                 self.processor.response(sock, response)
 
             L.info("We need to make a remote lookup to make a good "
                    "successor recommendation.")
 
             peer = self._peerlist_contains(sock)
-            self.lookup(req.sender, functools.partial(handler, sock, msg), 0)
+            self.lookup(msg.sender, functools.partial(handler, sock, msg), 0)
             retval = True
 
         if not self.stable.is_alive():
@@ -280,7 +278,7 @@ class LocalNode(chordnode.ChordNode):
         response = chordpkt.JoinResponse.unpack(msg.data)
 
         L.info("We have been permitted to join the network:")
-        L.info("    From peer with hash: %d", response.sender.hash)
+        L.info("    From peer with hash: %d", msg.sender)
         L.info("    Sender successor hash: %d on %s:%d",
                response.successor.hash, *response.successor.chord_addr)
         L.info("    Sender predecessor hash: %d on %s",
@@ -292,7 +290,7 @@ class LocalNode(chordnode.ChordNode):
 
         # Update the fake hash value we initially set (since we could only
         # estimate what the hash could have been of this peer).
-        self.successor.hash = response.sender.hash
+        self.successor.hash = msg.sender
 
         # It's possible that the node we used to join the network is also our
         # successor (by chance or if they're alone in the network). In this
@@ -321,7 +319,7 @@ class LocalNode(chordnode.ChordNode):
         request = chordpkt.NotifyRequest.unpack(msg.data)
         node = request.sender
 
-        L.info("Received a notification from a peer (hash=%d).", node.hash)
+        L.info("Received a notification from a peer (hash=%d).", msg.sender)
         if not self.predecessor:
             L.debug("    Testing this in the interval (%d, %d).",
                    int(self.predecessor.hash), int(self.hash))
@@ -339,14 +337,15 @@ class LocalNode(chordnode.ChordNode):
 
         self.predecessor.predecessor = node.predecessor
         self.predecessor.successor = node.successor
-        response = chordpkt.NotifyResponse.make_packet(set_pred, original=msg)
+        response = chordpkt.NotifyResponse.make_packet(self.hash, set_pred,
+                                                       original=msg)
         self.processor.response(sock, response)
         return response
 
     @handle_failed_request
     def on_notify_response(self, sock, msg):
         response = chordpkt.NotifyResponse.unpack(msg.data)
-        node = self._peerlist_contains(sock)
+        node = self._peerlist_contains(msg.sender)
         if not node: return False
         return True
 
@@ -361,8 +360,8 @@ class LocalNode(chordnode.ChordNode):
         pred = self.predecessor or self.successor
         succ = self.successor   or pred
 
-        response = chordpkt.InfoResponse.make_packet(self, pred, succ,
-                                                     original=msg)
+        response = chordpkt.InfoResponse.make_packet(self.hash, self,
+                                                     pred, succ, original=msg)
 
         L.info("Peer (%s:%d) requested info about us.", *sock.remote)
         L.info("Our details (%s:%d):", *self.chord_addr)
@@ -379,13 +378,12 @@ class LocalNode(chordnode.ChordNode):
         """
         response = chordpkt.InfoResponse.unpack(msg.data)
 
-        node = self._peerlist_contains(sock)
+        node = self._peerlist_contains(msg.sender)
         if not node:
             L.warning("Unknown socket source? %s:%d" % sock.remote)
-            node = self.create_peer(response.sender.hash,
-                                    response.sender.chord_addr, socket=sock)
+            node = self.create_peer(msg.sender, node.chord_addr, socket=sock)
 
-        L.info("Received info from a peer: %s", response.sender)
+        L.info("Received info from a peer: %s", msg.sender)
         L.info("    Successor on: %s:%d",   *response.successor.chord_addr)
         L.info("    Predecessor on: %s:%d", *response.predecessor.chord_addr)
 
@@ -398,11 +396,7 @@ class LocalNode(chordnode.ChordNode):
         """ Forwards to next closest node or looks up request.
         """
         req = chordpkt.LookupRequest.unpack(msg.data)
-        peer = self._peerlist_contains(sock)
-
-        if not peer:
-            import pdb; pdb.set_trace()
-
+        peer = self._peerlist_contains(msg.sender)
         if req.data: self.on_data_packet(peer, req.data)
 
         def on_response(socket, request, value, result_node, response):
@@ -426,7 +420,7 @@ class LocalNode(chordnode.ChordNode):
                    *response.listener)
             self.processor.response(socket, duplicate)
 
-        L.info("Received a lookup request from peer: %d", req.sender)
+        L.info("Received a lookup request from peer: %d", msg.sender)
         self.lookup(req.lookup,
                     functools.partial(on_response, sock, msg, req.lookup), 0)
         return True
@@ -465,7 +459,7 @@ class LocalNode(chordnode.ChordNode):
             r = chordpkt.LookupResponse.unpack(response_message.data)
 
             L.info("  Got a response for the lookup value %d.", r.lookup)
-            L.info("  The responder was: %d", r.sender)
+            L.info("  The responder was: %d", response_message.sender)
             L.info("  The lookup result: %d on %s:%d", r.mapped, *r.listener)
             L.debug("    took %d hops.", r.hops)
 
@@ -510,7 +504,7 @@ class LocalNode(chordnode.ChordNode):
 
         # Query the successor for information.
         L.info("Asking our successor (%s) for neighbor info...", self.successor)
-        request = chordpkt.InfoRequest.make_packet()
+        request = chordpkt.InfoRequest.make_packet(self.hash)
         try:
             response = self.processor.request(self.successor.peer_sock,
                                               request, self.on_info_response,
@@ -555,7 +549,8 @@ class LocalNode(chordnode.ChordNode):
         # We need to notify our successor about ourselves (regardless of whether
         # we adjusted or not), so they can set their predecessor appropriately.
         L.info("Notifying our successor (%s) about us.", self.successor)
-        request = chordpkt.NotifyRequest.make_packet(self, self.predecessor,
+        request = chordpkt.NotifyRequest.make_packet(self.hash, self,
+                                                     self.predecessor,
                                                      self.successor)
         self.processor.request(self.successor.peer_sock, request,
                                None, wait_time=0)
@@ -765,6 +760,6 @@ class LocalNode(chordnode.ChordNode):
 
     def __str__(self):
         return "[%s<-local(%s|peers=%d)->%s]" % (
-            str(int(self.predecessor.hash)) if self.predecessor else None,
+            str(int(self.predecessor.hash))[:6] if self.predecessor else None,
             self.compact, len(self.peers),
-            str(int(self.successor.hash))   if self.successor   else None)
+            str(int(self.successor.hash))[:6]   if self.successor   else None)

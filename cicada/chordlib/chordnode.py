@@ -92,14 +92,14 @@ class ChordNode(object):
     @property
     def compact(self):
         return "%s:%d|hash=%s" % (self.chord_addr[0], self.chord_addr[1],
-            str(int(self.hash)).rjust(len(str(routing.HASHMOD)), "0"))
+            str(int(self.hash)).rjust(len(str(routing.HASHMOD)), "0")[:6])
 
     def __repr__(self): return str(self)
     def __str__(self):
         return "[%s<-%s->%s]" % (
-            str(int(self.predecessor.hash)) if self.predecessor else None,
+            str(int(self.predecessor.hash))[:6] if self.predecessor else None,
             self.compact,
-            str(int(self.successor.hash)) if self.successor else None)
+            str(int(self.successor.hash))[:6]   if self.successor else None)
 
     def on_new_predecessor(self, old, new): pass
     def on_new_successor(self,   old, new): pass

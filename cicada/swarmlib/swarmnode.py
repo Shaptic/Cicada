@@ -75,7 +75,8 @@ class SwarmPeer(object):
         We wrap the data into a special routing packet and send it through the
         standard underlying DHT protocol.
 
-        :target         either a 2-tuple (hostname, port) or another `SwarmPeer`
+        :target         a 2-tuple (hostname, port), a `chordlib.routing.Hash`,
+                        or another `SwarmPeer` instance
         :data           the raw data to pack and send
         :duplicates[=0] the amount of extra peers to route the message through
         """
@@ -83,14 +84,17 @@ class SwarmPeer(object):
             dest = "%s:%d" % target
             dest = chordlib.routing.Hash(value=dest)
 
+        elif isinstance(target, chordlib.routing.Hash):
+            dest = target
+
         elif isinstance(target, SwarmPeer) and target.peer:
             dest = target.peer.hash
 
         else:
-            raise TypeError("expected (host, port) or SwarmPeer, got: %s" %
-                            type(target))
+            raise TypeError("expected (host, port), Hash, or SwarmPeer, "
+                            " got: %s" % type(target))
 
-        pkt = cicadapkt.DataMessage.make_packet(data)
+        pkt = cicadapkt.DataMessage.make_packet(self.peer.hash, data)
         peer = self.peer.lookup(dest, self.NOOP_RESPONSE, None, data=pkt.pack())
 
         exclusion = set(peer)

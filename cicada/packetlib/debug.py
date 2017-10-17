@@ -104,7 +104,8 @@ def dump_packet(data, fmt):
         except struct.error:
             unpacked = "err," + repr(chunk)
 
-        print "%s | %s -- %s %s" % (fmt.descriptions[i].ljust(desclen),
+        print "%s%s -- %s %s" % (fmt.descriptions[i].ljust(desclen) + " | " \
+            if fmt.descriptions[i].strip() else "",
             fmt_type.ljust(typelen), repr(chunk),
             ("[ %s ]" % repr(unpacked)) if unpacked != chunk and \
                 fmt_type.find("str") == -1 else "")

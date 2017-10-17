@@ -3,8 +3,8 @@ import pygame
 from ..visualizer import math as vmath
 
 class Window(object):
-    WIDTH  = 800
-    HEIGHT = 600
+    WIDTH  = 1400
+    HEIGHT = 1100
 
     def __init__(self):
         self.size = vmath.Vector(self.WIDTH, self.HEIGHT)

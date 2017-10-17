@@ -12,14 +12,13 @@ import functools
 
 import pygame
 
-import packetlib
+from cicada          import packetlib
+from cicada.swarmlib import swarmnode
+from cicada.chordlib import localnode
+from cicada.chordlib import utils
 
-from swarmlib import swarmnode
-from chordlib import localnode
-from chordlib import utils
-
-from visualizer.window  import Window
-from visualizer.math    import Vector
+from cicada.visualizer.window  import Window
+from cicada.visualizer.math    import Vector
 
 
 class DrawState(enum.Enum):
@@ -55,7 +54,7 @@ class VisualSprite(pygame.sprite.Sprite):
         circle = pygame.Surface(radius.t)
         circle.fill((255, 255, 255))
 
-        line1 = FONT2.render("hash=%d" % int(self.peer.hash),
+        line1 = FONT2.render("hash=%s" % str(int(self.peer.hash))[:6],
                              True, (0, 0, 0))
         line2 = FONT2.render("port=%d" % self.peer.listener[1],
                              True, (0, 0, 0))

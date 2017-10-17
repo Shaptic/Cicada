@@ -5,7 +5,6 @@ import math
 import enum
 import hashlib
 
-from cicada.chordlib import search
 from cicada.chordlib import utils, L
 
 

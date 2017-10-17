@@ -32,7 +32,7 @@ class HeartbeatManager(object):
                 L.info("Sending an INFO message to %s:%d",
                        *peer.peer_sock.remote)
 
-                msg = chordpkt.InfoRequest.make_packet()
+                msg = chordpkt.InfoRequest.make_packet(self.parent.hash)
                 self.processor.request(peer.peer_sock, msg,
                                        self.parent.on_info_response,
                                        wait_time=0)
@@ -70,7 +70,7 @@ class HeartbeatManager(object):
         self.info_thread.start()
         self.purge_thread.start()
 
-    def join(self, t=100):
+    def join(self, t=10):
         self.info_thread.join(t)
         self.purge_thread.join(t)
 

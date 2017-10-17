@@ -1,7 +1,10 @@
-import packetlib.debug   as D
-import packetlib.message as M
+from ..packetlib import debug   as D
+from ..packetlib import message as M
+from ..chordlib  import routing as R
 
-n = M.MessageContainer(M.MessageType.MSG_CH_NOTIFY, "hey babes\x77hey", 2884)
+h = R.Hash(value="sender")
+n = M.MessageContainer(M.MessageType.MSG_CH_NOTIFY, h,
+                       data="hey babes\x77hey", sequence=2884)
 print n; print
 print repr(n.pack());
 print "len=%d" % len(n.pack()); print
@@ -13,7 +16,7 @@ assert n.pack() == n.unpack(n.pack()).pack()
 import sys
 import random
 import string
-from   chordlib.routing import chord_hash, Hash
+from   ..chordlib.routing import chord_hash, Hash
 
 HASH_COUNT = 1000
 print "Running hashing test with %d hashes." % HASH_COUNT
@@ -45,8 +48,9 @@ import time
 import pprint
 import random
 import collections
-import chordlib.localnode
-import chordlib.routing
+
+from   ..chordlib import localnode
+from   ..chordlib import routing
 
 PEER_COUNT = int(sys.argv[1]) if len(sys.argv) > 1 else 25
 start_port = random.randint(10000, (2 ** 16) - PEER_COUNT - 1)
@@ -54,7 +58,7 @@ peers = []
 print "Creating %d peers..." % PEER_COUNT
 for i in xrange(PEER_COUNT):
     address = ("localhost", start_port + i)
-    peer = chordlib.localnode.LocalNode("%s:%d" % address, address)
+    peer = localnode.LocalNode("%s:%d" % address, address)
 
     def pred(n, o, p):
         print "  Peer", n, "predecessor: %s -> %s" % (

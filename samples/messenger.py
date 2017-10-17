@@ -21,6 +21,7 @@ sys.path.append(os.path.abspath(".."))
 
 import json
 import random
+import argparse
 
 # readline is a better interactive prompt
 try:
@@ -44,9 +45,10 @@ def send_message(config, peer, sender, content, to=""):
         "to": to
     }
     if not to:
-        peer.broadcast(json.dumps(message), duplicates=config.duplicates)
+        peer.broadcast(json.dumps(message))
     else:
-        raise NotImplementedError("can't PM yet")
+        peer.send(message["to"], json.dumps(message),
+                  duplicates=config.duplicates)
 
 def parse_message(raw):
     """ Parses a raw JSON string into a 3-tuple: (from, to, data).
@@ -60,6 +62,7 @@ class Config(object):
     """
     def __init__(self):
         self.parser = argparse.ArgumentParser(description="")
+        self.parser.add_argument("-u", "--username", help="")
         self.parser.add_argument("-r", "--resilience", dest="duplicates",
                                  default=0, type=int,
                                  help="")
@@ -119,9 +122,9 @@ class User(object):
 class Parser(object):
     """ Processes user input and performs action based on commands.
     """
-    def __init__(self, host, window, user):
+    def __init__(self, host, window, user, cfg):
         super(Parser, self).__init__()
-        self.config = Config()
+        self.config = cfg
         self.output = window
         self.quit = False
         self.host = host
@@ -219,7 +222,8 @@ class OutputWindow(object):
 
 
 def main():
-    username = raw_input("username: ")
+    config = Config()
+    username = config.username or raw_input("username: ")
     user = User(username)
     textinput = TextEntry(user)
 
@@ -228,7 +232,7 @@ def main():
     user.add_channel("#general")
 
     output_win = OutputWindow()
-    parser = Parser(root, output_win, user)
+    parser = Parser(root, output_win, user, config)
 
     reader = ReceiverThread(root, output_win)
     reader.start()

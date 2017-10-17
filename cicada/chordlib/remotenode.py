@@ -68,9 +68,9 @@ class RemoteNode(chordnode.ChordNode):
         else:
             remote = ("0", 0)
         return "[%s<-remote@%s:%d(%s)->%s]" % (
-            str(int(self.predecessor.hash)) if self.predecessor else None,
+            str(int(self.predecessor.hash))[:6] if self.predecessor else None,
             remote[0], remote[1], self.compact,
-            str(int(self.successor.hash))   if self.successor   else None)
+            str(int(self.successor.hash))[:6]   if self.successor   else None)
 
     @property
     def is_valid(self):
