@@ -3,5 +3,6 @@ python:
   - 2.7
 install:
 script:
-  - cd cicada
+  - ls -r
+  - ls cicada/tests
   - python -m cicada.tests.test_chordlib
