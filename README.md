@@ -1,6 +1,8 @@
 # Cicada #
 A resilient communication framework with peer-to-peer routing.
 
+[![Build Status](https://travis-ci.org/Shaptic/Cicada.svg?branch=master)](https://travis-ci.org/Shaptic/Cicada) [![GitHub last commit](https://img.shields.io/github/last-commit/shaptic/cicada.svg)]() [![GitHub release](https://img.shields.io/github/release/shaptic/cicada.svg)]()
+
 Features:
 
   - Lower bandwidth requirements for service providers
