@@ -1,9 +1,8 @@
 """ Defines the binding layer between local and remote peers.
 
-The process on which the peer is running has a `LocalNode` instance. All of its
-peers are `RemoteNode` instances which actually correspond to the respective
-`LocalNode` instance (which obviously may be on a different process of the same
-machine).
+The process on which the peer is running has a local peer instance, and all of
+its peers are remote instances -- these correspond to the respective local
+instances on either another machine or a different local process.
 """
 
 import time
@@ -16,24 +15,23 @@ from ..chordlib  import peersocket
 from ..chordlib  import routing
 from ..packetlib import chord as chordpkt
 
-class RemoteNode(chordnode.ChordNode):
-    """ Represents a remote Chord node in the hash ring.
 
-    This merely contains the ability to establish a connection to another peer,
-    as well as hold some remote-specific properties.
+class RemoteNode(chordnode.ChordNode):
+    """ Represents a remote peer in the Chord ring.
+
+    We establish a way to connect to a remote peer, and track some properties
+    about it, such as whether or not it can be considered "alive."
     """
+
     PEER_TIMEOUT = 30
 
     def __init__(self, on_send, node_hash, listener_addr, existing_socket=None):
         """ Establishes a connection to a remote node.
 
-        The address is the receiving end of the socket of the `LocalNode`
-        that we're connecting to.
-
         If `existing_socket` exists, there is no connection initiated.
 
-        :node_hash              the hash of the remote node.
-        :listener_addr          the listener address on the remote node.
+        :node_hash              the hash of the remote node
+        :listener_addr          the listener address on the remote node
         :existing_socket[=None] is there already an established connection?
         """
         if not isinstance(listener_addr, tuple):

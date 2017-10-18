@@ -173,9 +173,6 @@ class PeerSocket(object):
         """
         data = self._socket.recv(message.MessageContainer.MIN_MESSAGE_LEN)
 
-        # TODO: What if someone actually _wants_ to send
-        #       `MessageContainer.END`?? Queue processing needs to be
-        #       better.
         try:
             self._queue.read(data)
 

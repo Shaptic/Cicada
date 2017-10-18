@@ -1,4 +1,4 @@
-""" Defines a local Chord node.
+""" Defines a local Chord peer.
 
 This object begins structuring a Chord network on your machine. At this point,
 you can either join an existing ring (by using the `LocalNode.join_ring`
@@ -47,33 +47,6 @@ def handle_failed_request(fn):
 
 class LocalNode(chordnode.ChordNode):
     """ Represents the current local peer in the Chord network.
-
-    Connection Design
-    =================
-    At the core, there's a `SocketProcessor` object that runs in a separate
-    thread asynchronously processing all of the established connections. This is
-    at a minimum two connections to the direct neighbors, and at a maximum
-    `log(n) + 1` connections, where `n` is the size of the hash ring, excluding
-    unused sockets that are waiting to time out.
-
-    These raw sockets are linked to peers in this object in a list. Every peer
-    maintains direct properties that link to its predecessor and successor, but
-    other connections (such as a when _another_ peer considers us as its
-    successor) are only in the peer list.
-
-    The predecessor is ONLY set during stabilization, in which, after another
-    peer, B, decides to make this peer, A, its successor, notifies A and B
-    decides that this is truly a better predecessor.
-
-    Similarly, the ONLY time that the successor is set is on a NOTIFY request in
-    which the sender's (S) predecessor is better than the current peer's (P).
-    The peer will respond with a bit indicating whether or not the new successor
-    was "accepted," which establishes that it's now a one-way relationship
-    between peer S -> P.
-
-    TODO: Introduce some kind of notification system so that the neighboring
-          peer can immediately know to requery for the new successor, rather
-          than waiting for the arbitrary stabilization routine.
     """
     def __init__(self, data, bind_addr,
                  on_send=lambda *args: None,

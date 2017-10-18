@@ -12,7 +12,6 @@ HASHFN = hashlib.sha256
 def chord_hash(data):
     return HASHFN(data).digest()
 
-
 HASHLEN  = len(chord_hash("0"))
 CHUNKLEN = int(math.ceil(HASHLEN / 4.0))
 BITCOUNT = HASHLEN * 8
@@ -30,13 +29,13 @@ def moddist(a, b, m):
 
 
 class Hash(object):
-    """ Represents a hashed object with proper conversions between types.
+    """ A hashed value with proper conversions between types.
     """
     def __init__(self, value="", hashed=""):
-        """ Initializes the hash in one of two ways.
+        """ Initializes the hash.
 
         Either you know the initial value, and the hash is computed, or you know
-        the hashed value (and the initial value is by definition not
+        the hashed value (and the initial value is -- by definition -- not
         determinable) and only that is stored.
         """
         if value and hashed:
@@ -215,7 +214,7 @@ class Interval(object):
 
 
 class Route(Interval):
-    """ Represents an `Interval` with an associated peer.
+    """ Associates an `Interval` with a peer.
     """
     def __init__(self, start, end, peer, mod=HASHMOD):
         super(Route, self).__init__(start, end, mod)
@@ -226,14 +225,14 @@ class Route(Interval):
         return "[%d, %s) | %s" % (self.start, self.end, repr(self.peer))
 
 
-
 class RoutingTable(object):
-    """ Represents routing optimization table for a peer.
+    """ A peer's routing optimization table.
 
     We have a series of entries starting from the peer's hash value, with 2^i
-    steps between each entry. These should be refreshed regularly from the peer
+    steps between each entry. These should be refreshed regularly by the peer
     itself.
     """
+
     class LookupState(enum.Enum):
         """ Indicates how closely we resolved a particular lookup value.
         """
@@ -248,7 +247,6 @@ class RoutingTable(object):
         self.root = root
 
         self.length = int(math.ceil(math.log(self.mod, 2)))
-
         start = int(self.root.hash)
         self.routes = [
             Route((start + 2 ** i)       % self.mod,

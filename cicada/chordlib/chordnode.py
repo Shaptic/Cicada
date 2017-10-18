@@ -12,12 +12,18 @@ from ..chordlib import routing
 from ..chordlib import utils as chutils
 
 
+def sleeper(a, b):
+    """ Returns a function that, when called, sleeps between `a` & `b` seconds.
+    """
+    return lambda: random.randint(a, b)
+
+
 class Stabilizer(chutils.InfiniteThread):
     """ Performs the Chord stabilization algorithm on a particular node.
     """
     def __init__(self, peer):
         super(Stabilizer, self).__init__(name="StabilizerThread",
-                                         pause=lambda: random.randint(3, 10))
+                                         pause=sleeper(3, 10))
         self.peer = peer
 
     def _loop_method(self):
@@ -29,7 +35,7 @@ class RouteOptimizer(chutils.InfiniteThread):
     """
     def __init__(self, peer):
         super(RouteOptimizer, self).__init__(name="RouteTableThread",
-                                             pause=lambda: random.randint(2, 7))
+                                             pause=sleeper(2, 7))
         self.peer = peer
 
     def _loop_method(self):

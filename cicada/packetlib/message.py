@@ -383,8 +383,7 @@ class MessageContainer(object):
 
         The assumption is that the entire bytestream makes up a complete and
         correct packet object. If the message is improperly formatted, an
-        `UnpackException` is thrown describing what element was missing or
-        incorrect.
+        `UnpackException` is thrown.
         """
         if len(packet) < cls.MIN_MESSAGE_LEN:
             raise UnpackException(ExceptionType.EXC_TOO_SHORT, len(packet))
