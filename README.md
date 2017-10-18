@@ -1,7 +1,7 @@
 # Cicada #
 A resilient communication framework with peer-to-peer routing.
 
-[![Build Status](https://travis-ci.org/Shaptic/Cicada.svg?branch=master)](https://travis-ci.org/Shaptic/Cicada) [![GitHub last commit](https://img.shields.io/github/last-commit/shaptic/cicada.svg)]() [![GitHub release](https://img.shields.io/github/release/shaptic/cicada.svg)]()
+[![Build Status](https://travis-ci.org/Shaptic/Cicada.svg?branch=master)](https://travis-ci.org/Shaptic/Cicada) [![GitHub last commit](https://img.shields.io/github/last-commit/shaptic/cicada.svg)]() [![GitHub (pre-)release](https://img.shields.io/github/release/Shaptic/Cicada/all.svg)]()
 
 Features:
 
@@ -49,7 +49,8 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
 There is still a long way to go before _Cicada_ has a robust enough feature set for consumption. This section outlines future plans. In the short term:
 
   - [ ] Update the in-code comments to make sure everything is current.
-  - [ ] Convert the docstring tests to unit tests.
+  - [ ] Decide on a license and add it.
+  - [x] Convert the docstring tests to unit tests.
   - [ ] Write more unit tests.
   - [ ] Try breaking hash-chaining and write tests for it.
   - [ ] Upgrade the library to Python 3.

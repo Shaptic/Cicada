@@ -2,6 +2,7 @@ import threading
 import time
 import math
 
+
 class InfiniteThread(threading.Thread):
     """ An abstract thread to run a method forever until its stopped.
     """
