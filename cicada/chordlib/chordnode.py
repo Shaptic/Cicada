@@ -15,7 +15,6 @@ from ..chordlib import utils as chutils
 class Stabilizer(chutils.InfiniteThread):
     """ Performs the Chord stabilization algorithm on a particular node.
     """
-
     def __init__(self, peer):
         super(Stabilizer, self).__init__(name="StabilizerThread",
                                          pause=lambda: random.randint(3, 10))
@@ -28,7 +27,6 @@ class Stabilizer(chutils.InfiniteThread):
 class RouteOptimizer(chutils.InfiniteThread):
     """ Performs periodic successor lookups to fill out route table.
     """
-
     def __init__(self, peer):
         super(RouteOptimizer, self).__init__(name="RouteTableThread",
                                              pause=lambda: random.randint(2, 7))
@@ -45,7 +43,6 @@ class ChordNode(object):
     computed locally. All other properties may involve network communication, so
     we don't define those.
     """
-
     def __init__(self, node_hash, listener_addr):
         """ Initializes internal structures.
 

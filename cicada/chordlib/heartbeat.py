@@ -13,7 +13,6 @@ from ..packetlib import chord as chordpkt
 class HeartbeatManager(object):
     """ Maintains connections between peers.
     """
-
     class InfoThread(chutils.InfiniteThread):
         """ Sends pings to who we care about: predecessor and successor.
         """

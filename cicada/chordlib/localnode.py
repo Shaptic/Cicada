@@ -75,7 +75,6 @@ class LocalNode(chordnode.ChordNode):
           peer can immediately know to requery for the new successor, rather
           than waiting for the arbitrary stabilization routine.
     """
-
     def __init__(self, data, bind_addr,
                  on_send=lambda *args: None,
                  on_data=lambda d: None):
@@ -649,7 +648,6 @@ class LocalNode(chordnode.ChordNode):
     def on_error(self, socket, graceful=False):
         """ On associating a socket with a peer, removes it from the peerlist.
         """
-
         # Intentionally don't use `_peerlist_contains` to avoid any calls on the
         # socket object that may throw.
         node = None

@@ -17,7 +17,6 @@ class BroadcastMessage(message.BaseMessage):
     are in the packet's "visited" list. Additionally, it will inject these new
     recepients to the list, popping off the oldest peers.
     """
-
     MAX_QUEUE_LENGTH = routing.BITCOUNT
     SECONDARY_TYPE = message.MessageType.MSG_CI_BCAST
     RAW_FORMAT = [

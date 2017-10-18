@@ -1,7 +1,7 @@
 # Cicada #
 A resilient communication framework with peer-to-peer routing.
 
-[![Build Status](https://travis-ci.org/Shaptic/Cicada.svg?branch=master)](https://travis-ci.org/Shaptic/Cicada) [![GitHub last commit](https://img.shields.io/github/last-commit/shaptic/cicada.svg)]() [![GitHub (pre-)release](https://img.shields.io/github/release/Shaptic/Cicada/all.svg)]()
+[![Build Status](https://travis-ci.org/Shaptic/Cicada.svg?branch=master)](https://travis-ci.org/Shaptic/Cicada) [![GitHub last commit](https://img.shields.io/github/last-commit/shaptic/cicada.svg)](https://github.com/Shaptic/Cicada/commits/master) [![GitHub (pre-)release](https://img.shields.io/github/release/Shaptic/Cicada/all.svg)](https://github.com/Shaptic/Cicada/releases)
 
 Features:
 
@@ -49,6 +49,9 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
 There is still a long way to go before _Cicada_ has a robust enough feature set for consumption. This section outlines future plans. In the short term:
 
   - [ ] Update the in-code comments to make sure everything is current.
+  - [ ] Refactor the _Cicada_-layer protocol to have better packing, especially regarding the message types.
+  - [ ] Refactor message queueing so it doesn't arbitrarily search for the suffix bytes, since that breaks when someone actually tries sending them as high-level data.
+  - [ ] Add `ProtocolSpecifier` info to all of the `BaseMessage` child classes.
   - [ ] Decide on a license and add it.
   - [x] Convert the docstring tests to unit tests.
   - [ ] Write more unit tests.

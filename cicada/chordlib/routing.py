@@ -217,7 +217,6 @@ class Interval(object):
 class Route(Interval):
     """ Represents an `Interval` with an associated peer.
     """
-
     def __init__(self, start, end, peer, mod=HASHMOD):
         super(Route, self).__init__(start, end, mod)
         self.peer = peer
@@ -235,7 +234,6 @@ class RoutingTable(object):
     steps between each entry. These should be refreshed regularly from the peer
     itself.
     """
-
     class LookupState(enum.Enum):
         """ Indicates how closely we resolved a particular lookup value.
         """

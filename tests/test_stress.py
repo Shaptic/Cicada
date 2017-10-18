@@ -1,10 +1,3 @@
-# Stress testing process:
-#
-#  - Create a bunch of arbitrary nodes.
-#  - Connect them all randomly.
-#  - Ensure that after some time, each one's successor pointer is as close as it
-#    can be, and likewise for the predecessor pointer.
-#
 import time
 import random
 import collections
@@ -18,6 +11,13 @@ from cicada.chordlib import localnode
 PEER_COUNT = 25
 class TestStressStabilization(unittest.TestCase):
     """ A test that rapidly joins a bunch of peers to a network and stabilizes.
+
+    Stress testing process:
+
+      - Create a bunch of arbitrary nodes.
+      - Connect them all randomly.
+      - Ensure that after some time, each one's successor pointer is as close as
+        it can be, and likewise for the predecessor pointer.
     """
     def test_stress(self):
         peers = self._join_all()
@@ -109,8 +109,7 @@ class TestStressStabilization(unittest.TestCase):
             all_loops.append(loops)
 
         if len(all_loops) > 1:
-            print "  FAILED! Found multiple network loops."
-            print "  Loops:"
+            print "  FAILED! Found multiple network loops:"
             for n, loop in enumerate(all_loops):
                 print "    - Loop %d" % n
                 for peer in loop:
@@ -118,7 +117,6 @@ class TestStressStabilization(unittest.TestCase):
                 print "    ========="
             self.assertTrue(len(all_loops) == 1)
 
-        # print "Performing network validation..."
         NodeDist = collections.namedtuple("NodeDist", "node dist")
         for peer in peers:
             calc_successor = peer._find_closest_peer_moddist(int(peer.hash), set([peer]))

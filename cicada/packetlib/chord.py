@@ -69,7 +69,6 @@ class JoinRequest(message.BaseMessage):
     is sending out this message. This way, other peers can route through to this
     node.
     """
-
     TYPE = message.MessageType.MSG_CH_JOIN
     RAW_FORMAT = [
         PackedAddress.EMBED_FORMAT  # joinee listener

@@ -21,7 +21,6 @@ class ListenerThread(chutils.InfiniteThread):
     After the connection is established, the socket will still continue to
     accept connections from further clients.
     """
-
     def __init__(self, sock, on_accept, timeout=10):
         """ Creates a thread to listen on a socket.
 
@@ -66,7 +65,6 @@ class SocketProcessor(chutils.InfiniteThread):
     See `__init__()` for the various events that we act on with provided
     handlers.
     """
-
     class RequestResponse(object):
         """ A pair of a sent request and its corresponding response.
 
@@ -77,7 +75,6 @@ class SocketProcessor(chutils.InfiniteThread):
         :event      either a callback function or a threading event to trigger
                     when the response is received
         """
-
         def __init__(self, message, event):
             self.request = message
             self.response = None

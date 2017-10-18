@@ -31,7 +31,6 @@ class InfiniteThread(threading.Thread):
 class FixedStack(object):
     """ Implements a fixed-sized list that pops off the oldest items.
     """
-
     def __init__(self, size):
         self.size = size
         self._list = []

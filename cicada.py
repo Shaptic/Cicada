@@ -29,7 +29,6 @@ def main(host_address, join_address=None):
     At this point, B will communicate and receive updates from B via its peer
     socket, and vice-versa.
     """
-
     chordlib.log.info("main(%s, %s)" % (host_address, join_address))
     root = chordlib.localnode.LocalNode("%s:%d" % host_address, host_address)
 
