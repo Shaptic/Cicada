@@ -5,14 +5,14 @@ you can either join an existing ring (by using the `LocalNode.join_ring`
 method), or simply by waiting for a peer to join this ring.
 """
 
-import collections
+import time
+import random
+import select
+import socket
+import logging
 import threading
 import functools
-import logging
-import socket
-import select
-import random
-import time
+import collections
 
 from .. import chordlib
 from .. import packetlib
@@ -728,8 +728,8 @@ class LocalNode(chordnode.ChordNode):
               As such, you should beware of the validity of the returned peer.
         """
         if isinstance(value, routing.Hash): value = int(value)
-        if not isinstance(value, int):
-            raise TypeError("expected int, got %s" % type(value))
+        if not isinstance(value, (int, long)):
+            raise TypeError("expected long, got %s" % type(value))
 
         table = []  # [ (peer, distance) ]
         for peer in self.peers.difference(exclude):

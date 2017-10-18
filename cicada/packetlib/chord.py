@@ -206,8 +206,8 @@ class LookupRequest(message.BaseMessage):
 
         offset = 0
         lookup, bs     = PackedHash.unpack(bs)
-        dlen,   offset = get(cls.RAW_FORMAT[2])
-        data,   offset = get(cls.RAW_FORMAT[3] % dlen)
+        dlen,   offset = get(cls.RAW_FORMAT[1])
+        data,   offset = get(cls.RAW_FORMAT[2] % dlen)
 
         assert bs[offset:] == "", "Remaining bytes?? %s" % bs[offset:]
         return LookupRequest(lookup, data)
@@ -251,7 +251,7 @@ class LookupResponse(message.BaseMessage):
         address, bs = PackedAddress.unpack(bs)
         hops = message.MessageContainer.extract_chunk(cls.RAW_FORMAT[-1], bs, 0)
 
-        return LookupResponse(node, lookup, mapped, address)
+        return LookupResponse(lookup, mapped, address, hops[0])
 
     def __repr__(self):
         return "<LOOKUPr %d | result=%d,%s:%d,hops=%d>" % (

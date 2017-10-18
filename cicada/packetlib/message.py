@@ -28,7 +28,7 @@ class FormatMetaclass(type):
           contiguous string called `FORMAT`.
 
         - `MESSAGE_SIZE` is defined as the length, in bytes, of this
-          specification. If any of the objclass NotifyResponse(message.BaseMessage):ects in `FORMAT` take a variable size,
+          specification. If any of the objects in `FORMAT` take a variable size,
           such as variable-length strings (which could, for example, be defined
           as "str:H:%ds"), they are assumed to be zero-length. Thus, it's more
           accurate to say `MIN_MESSAGE_SIZE`, I guess.

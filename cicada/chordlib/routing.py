@@ -61,7 +61,7 @@ class Hash(object):
             self._hash_ints = tuple(hashed)
 
         else:
-            raise TypeError("Expected value or (int, str, iter, Hash), got: "
+            raise TypeError("Expected value or (str, iter, Hash), got: "
                 "value='%s',hashed='%s'" % (value, hashed))
 
         assert str(self) == Hash.unpack_hash(self.parts), \
@@ -86,10 +86,10 @@ class Hash(object):
         return self._int_cache
 
     def __eq__(self, other):
-        if isinstance(other, int):    return int(self) == other
-        elif isinstance(other, str):  return str(self) == other
-        elif isinstance(other, Hash): return int(self) == int(other)
-        raise TypeError("expected int,str,Hash, got %s" % type(other))
+        if isinstance(other, (int, long)):  return int(self) == other
+        elif isinstance(other, str):        return str(self) == other
+        elif isinstance(other, Hash):       return int(self) == int(other)
+        raise TypeError("expected long,str,Hash, got %s" % type(other))
 
     def __ne__(self, other):
         return not (self == other)
