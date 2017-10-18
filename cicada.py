@@ -4,9 +4,9 @@ import time
 import logging
 import argparse
 
-import chordlib
-import chordlib.localnode
-import chordlib.utils as chutils
+from cicada import chordlib
+from cicada.chordlib import localnode as localnode
+from cicada.chordlib import utils     as chutils
 
 def main(host_address, join_address=None):
     """ Executes a normal Chord workflow.
@@ -30,17 +30,13 @@ def main(host_address, join_address=None):
     socket, and vice-versa.
     """
     chordlib.log.info("main(%s, %s)" % (host_address, join_address))
-    root = chordlib.localnode.LocalNode("%s:%d" % host_address, host_address)
+    root = localnode.LocalNode("%s:%d" % host_address, host_address)
 
     if join_address is not None:
         root.join_ring(join_address)
 
-    try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        print "Interrupting for interactive mode."
-        import pdb; pdb.set_trace()
+    while True:
+        time.sleep(60)
 
     return (root, )
 
@@ -55,6 +51,9 @@ if __name__ == "__main__":
         help="the address to listen on for incoming Chord peers")
     parser.add_argument("--join", dest="join_address", metavar="address",
         help="the address of an existing Chord ring to join")
+    parser.add_argument("--duplicate", dest="duplicates", metavar="N",
+        help="the number of extra routes to take per-message "
+             "[NOT IMPLEMENTED]")
     parser.add_argument("--stdout", dest="screenlog", action="store_true",
         help="write all logging output to stdout in addition to the logfile")
     parser.add_argument("--debug", dest="debuglog", action="store_true",

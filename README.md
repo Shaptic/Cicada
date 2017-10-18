@@ -48,7 +48,8 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
 # Feature Work #
 There is still a long way to go before _Cicada_ has a robust enough feature set for consumption. This section outlines future plans. In the short term:
 
-  - [ ] Update the in-code comments to make sure everything is current.
+  - [x] Update the in-code comments to make sure everything is current.
+  - [ ] Add `duplicates=` support to the command-line interface.
   - [ ] Add proper per-peer logging so debugging isn't miserable, and maybe a log viewer to go with it?
   - [ ] Fix socket error handling, popping the sockets off the stream list.
   - [ ] Introduce a way for a neighboring peer to immediately requery for the new successor, rather than waiting for the arbitrary stabilization routine or an `INFO` ping.
