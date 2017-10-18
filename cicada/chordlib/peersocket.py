@@ -208,6 +208,12 @@ class PeerSocket(object):
         return self._socket.shutdown(socket.SHUT_WR)
 
     @validate_socket
+    def close(self):
+        self._local = self._remote = None
+        self._fileno = 0
+        self._socket.close()
+
+    @validate_socket
     def _cache_local_properties(self):
         self._fileno = self._socket.fileno()
         self.local  = self._socket.getsockname()

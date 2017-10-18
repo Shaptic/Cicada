@@ -6,7 +6,6 @@
 #    can be, and likewise for the predecessor pointer.
 #
 import time
-import pprint
 import random
 import collections
 import unittest
@@ -28,6 +27,7 @@ class TestStressStabilization(unittest.TestCase):
             peer.processor.stop_running()
             peer.listen_thread.stop_running()
             peer.stable.stop_running()
+            peer.listener.shutdown()
             peer.listener.close()
 
     def _join_all(self):
@@ -74,17 +74,9 @@ class TestStressStabilization(unittest.TestCase):
         return peers
 
     def _stabilize(self, peers):
-        sleep_time = PEER_COUNT * 10
-        # print "Waiting some time for stabilization (%ds)..." % sleep_time
-        time.sleep(sleep_time)
+        time.sleep(PEER_COUNT * 10)
 
-        # print "Full peer dump:"
-        # for peer in peers:
-        #     print peer
-
-        # print "Ensuring there are no independent loops."
         peermap = {int(n.hash): n for n in peers}
-        pprint.pprint(peermap)
         all_loops = []
 
         while set(sum(map(list, all_loops), [])) != set(peermap.keys()):
@@ -128,17 +120,11 @@ class TestStressStabilization(unittest.TestCase):
 
         # print "Performing network validation..."
         NodeDist = collections.namedtuple("NodeDist", "node dist")
-        for peer in connected:
+        for peer in peers:
             calc_successor = peer._find_closest_peer_moddist(int(peer.hash), set([peer]))
-            # print "    For the peer", peer
-            # print "      The calculated successor was", int(calc_successor.hash)
-            # print "      The actual successor is", int(peer.successor.hash)
-
             if not peer.successor or calc_successor.hash != peer.successor.hash:
-                print "    FAILED! Expected %d, got %d: %s" % (calc_successor.hash,
+                print "  FAILED! Expected %d, got %d: %s" % (calc_successor.hash,
                       peer.successor.hash if peer.successor else 0, peer)
-            else:
-                print "    PASSED!"
 
             self.assertTrue(peer.successor)
             self.assertTrue(calc_successor.hash == peer.successor.hash)

@@ -24,37 +24,6 @@ class BSearchMode(enum.Enum):
 
 def bsearch(array, target, func=lambda x: x, mode=BSearchMode.EXACT):
     """ Performs binary search on a sorted array.
-
-    >>> arr = [ 5 ]
-    >>> bsearch(arr, 10, mode=BSearchMode.SUCC)
-    1
-    >>> bsearch(arr, 2, mode=BSearchMode.SUCC)
-    0
-    >>> bsearch(arr, 10, mode=BSearchMode.PRED)
-    0
-    >>> bsearch(arr, 2, mode=BSearchMode.PRED)
-    0
-    >>> arr = [ 2*i for i in xrange(6) ]
-    >>> arr
-    [0, 2, 4, 6, 8, 10]
-    >>> bsearch(arr, 2)
-    1
-    >>> bsearch(arr, 2, mode=BSearchMode.PRED)
-    1
-    >>> bsearch(arr, 3)
-    -1
-    >>> bsearch(arr, 3, mode=BSearchMode.PRED)
-    1
-    >>> bsearch(arr, 3, mode=BSearchMode.SUCC)
-    2
-    >>> bsearch(arr, 12, mode=BSearchMode.SUCC)
-    6
-    >>> # Just make sure that the lambda approach works.
-    >>> import collections
-    >>> A = collections.namedtuple("A", "a")
-    >>> arr = [ A(_) for _ in arr ]
-    >>> bsearch(arr, 6, func=lambda x: x.a)
-    3
     """
     left = 0
     rite = top = len(array) - 1
@@ -114,35 +83,6 @@ def find_pivot(array, func=lambda x: x):
           AND
         - Everything [pivot, length) is smaller than anything before it
             elem < min(array[:pivot]) for elem in array[pivot + 1:]
-
-    See the test cases below for examples.
-
-    >>> a = [ 1, 2, 3, 4 ]          # sorted
-    >>> find_pivot(a)
-    0
-    >>> a = a[::-1]                 # reversed
-    >>> find_pivot(a)
-    3
-    >>>
-    >>> a = [ 5, 10, 15, 20, 0 ]    # odd array length with pivot
-    >>> find_pivot(a)
-    4
-    >>> a = [ 10, 12, 4, 8, 9 ]
-    >>> find_pivot(a)
-    2
-    >>> import random
-    >>> def rotate(array, i):
-    ...    return array[-i:] + array[:-i]
-    >>>
-    >>> for _ in xrange(10):        # random rotated lists
-    ...    r = xrange(random.randint(10, 50))
-    ...    tester = set([ random.choice(range(0, 100)) for x in r ])
-    ...    tester = list(sorted(tester))
-    ...    # Choose a random rotation size
-    ...    rot = random.randint(0, len(tester) - 1)
-    ...    tester = rotate(tester, rot)
-    ...    assert find_pivot(tester) == rot, "Failed on %s: chose %d, not %d" % (
-    ...         str(tester), find_pivot(tester), rot)
     """
     low = 0
     high = len(array) - 1
@@ -170,24 +110,6 @@ def find_insertion_point(value, local, array, func=lambda x: x):
     pivots. It should not be in the array. We find the index at which the
     given value fits into the array, ensuring that it does not violate the
     rotation.
-
-    >>> hashes = [ 50, 68, 75, 99, 14, 28 ]
-    >>> results = [
-    ...     find_insertion_point(40,  45, hashes),
-    ...     find_insertion_point(49,  45, hashes),
-    ...     find_insertion_point(55,  45, hashes),
-    ...     find_insertion_point(100, 45, hashes),
-    ...     find_insertion_point(5,   45, hashes),
-    ...     find_insertion_point(15,  45, hashes)
-    ... ]
-    >>> results
-    [6, 0, 1, 4, 4, 5]
-    >>> find_insertion_point(20, 40, [ 50 ])
-    1
-    >>> find_insertion_point(20, 40, [ 30 ])
-    1
-    >>> find_insertion_point(30, 40, [ 20 ])
-    1
     """
     length = len(array)
 
@@ -214,7 +136,7 @@ def find_insertion_point(value, local, array, func=lambda x: x):
     # the pivot index.
     if value > local:   # left side
         return bsearch(array[:pivot], value, func=func,
-                       mode=BSearchMode.SUCCESSOR)
+                       mode=BSearchMode.SUCC)
 
     return pivot + bsearch(array[pivot:], value, func=func,
-                           mode=BSearchMode.SUCCESSOR)
+                           mode=BSearchMode.SUCC)
