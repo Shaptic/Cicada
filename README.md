@@ -53,7 +53,7 @@ There is still a long way to go before _Cicada_ has a robust enough feature set 
   - [ ] Add `duplicates=` support to the command-line interface.
   - [ ] Add proper per-peer logging so debugging isn't miserable, and maybe a log viewer to go with it?
   - [ ] Fix socket error handling, popping the sockets off the stream list.
-  - [-] Introduce a way for a neighboring peer to immediately requery for the new successor, rather than waiting for the arbitrary stabilization routine or an `INFO` ping.
+  - [x] ~~Introduce a way for a neighboring peer to immediately requery for the new successor, rather than waiting for the arbitrary stabilization routine or an `INFO` ping.~~
   - [ ] Refactor the _Cicada_-layer protocol to have better packing, especially regarding the message types.
   - [x] Refactor message queueing so it doesn't arbitrarily search for the suffix bytes, since that breaks when someone actually tries sending them as high-level data.
   - [ ] Add `ProtocolSpecifier` info to all of the `BaseMessage` child classes.
