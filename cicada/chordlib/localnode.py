@@ -647,13 +647,11 @@ class LocalNode(chordnode.ChordNode):
             msg = "Lost our successor! (we are %s)" % self
             self.successor = None
             L.critical(msg)
-            print msg
 
         if self.predecessor and node == self.predecessor:
             msg = "Lost our predecessor! (we are %s)" % self
             self.predecessor = None
             L.critical(msg)
-            print msg
 
         self.peers.remove(node)
 

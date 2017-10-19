@@ -1,3 +1,4 @@
+import enum
 import socket
 import select
 import struct
@@ -56,10 +57,23 @@ class ReadQueue(object):
     BUFFER_END_BYTES = struct.pack("!%ds" % len(message.MessageContainer.END),
                                    message.MessageContainer.END)
 
+    class PacketState(enum.Enum):
+        WAITING = 0
+        READING = 1
+
     def __init__(self):
-        self.queue = []
-        self.pending = ""
-        self.queue_lock = threading.Lock()
+        self._queue = []
+        self._pending = ""
+        self._queue_lock = threading.Lock()
+        self._pkt_state = ReadQueue.PacketState.WAITING
+
+        formats = message.MessageContainer.RAW_FORMATS
+        header_fmt = formats[message.MessageBlob.MSG_HEADER].raw_format
+        prev_fmt = header_fmt[:-1]
+        upto_resp_fmt = header_fmt[:3]
+        self._header_offset = struct.calcsize('!' + ''.join(prev_fmt))
+        self._resp_offset   = struct.calcsize('!' + ''.join(upto_resp_fmt))
+        self._next_length = 0
 
     def read(self, data):
         """ Processes some data into the queue.
@@ -68,37 +82,60 @@ class ReadQueue(object):
         before this one is processed, if reads are done asynchronously from
         the queueing.
         """
-        with self.queue_lock:
+        with self._queue_lock:
             try:
-                self.pending += data
-                index = self.pending.find(self.BUFFER_END_BYTES)
-                if index == -1: return
+                self._pending += data
 
-                index += len(self.BUFFER_END_BYTES)
-                relevant = self.pending[:index]
-                pkt = message.MessageContainer.unpack(relevant)
-                self.pending = self.pending[index:]
-                if self.pending:
-                    L.debug("Remainder: %s", repr(self.pending))
-                self.queue.append(pkt)
+                # We are still waiting for the length byte.
+                if self._pkt_state == ReadQueue.PacketState.WAITING:
+                    n, m = self._header_offset, self._resp_offset
+                    if len(self._pending) >= n:
+                        length = self._pending[n : n + 4]
+                        resp = self._pending[m : m + 1]
+
+                        self._next_resp, = struct.unpack('!?', resp)
+                        self._next_length, = struct.unpack('!I', length)
+                        self._pkt_state = ReadQueue.PacketState.READING
+
+                if self._pkt_state == ReadQueue.PacketState.READING:
+                    base_length = message.MessageContainer.MIN_MESSAGE_LEN
+                    if self._next_resp:
+                        base_length += message.MessageContainer.RESPONSE_LEN
+                    if len(self._pending) == base_length + self._next_length:
+                        try:
+                            pkt = message.MessageContainer.unpack(self._pending)
+                            self._queue.append(pkt)
+                        except message.UnpackException:
+                            pass
+
+                # index = self._pending.find(self.BUFFER_END_BYTES)
+                # if index == -1: return
+
+                # index += len(self.BUFFER_END_BYTES)
+                # relevant = self._pending[:index]
+                # pkt = message.MessageContainer.unpack(relevant)
+                # self._pending = self._pending[index:]
+                # if self._pending:
+                #     L.debug("Remainder: %s", repr(self._pending))
+                # self.queue.append(pkt)
 
             except message.UnpackException, e:
                 import traceback
                 from ..packetlib import debug
                 print "Failed to parse inbound message:", str(e)
                 traceback.print_exc()
-                debug.hexdump(self.pending)
+                debug.hexdump(self._pending)
                 raise
 
     @property
     def ready(self):
         """ Returns whether or not the queue is ready to be processed. """
-        return bool(self.queue)
+        return bool(self._queue)
 
     def pop(self):
         """ Removes the oldest packet from the queue. """
-        with self.queue_lock:
-            return self.queue.pop(0)
+        with self._queue_lock:
+            return self._queue.pop(0)
 
 
 def validate_socket(fn):

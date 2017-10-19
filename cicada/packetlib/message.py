@@ -245,7 +245,7 @@ class MessageContainer(object):
 
     CHORD_PR  = "\x63\x68"      # ch
     CICADA_PR = "\x63\x69"      # ci
-    VERSION   = 0x0003          # v0.3
+    VERSION   = 0x0004          # v0.4
     END       = "\x47\x4b\x04"  # GK[EoT]
 
     RAW_FORMATS = {
@@ -271,8 +271,6 @@ class MessageContainer(object):
             ("%ds",  "P-byte payload string"),
         ]),
         MessageBlob.MSG_END: debug.ProtocolSpecifier([
-            ("B",    "byte-aligned padding length, Z"),
-            ("%ds",  "Z padding bytes"),
             ("3s",   "end-of-message"),
         ]),
     }
@@ -284,8 +282,8 @@ class MessageContainer(object):
     }
     HEADER_LEN   = struct.calcsize('!' + FORMATS[MessageBlob.MSG_HEADER])
     RESPONSE_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_RESPONSE])
-    SUFFIX_LEN   = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END] % 0)
-    MIN_MESSAGE_LEN = chutils.nextmul(HEADER_LEN + SUFFIX_LEN, 8)
+    SUFFIX_LEN   = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END])
+    MIN_MESSAGE_LEN = HEADER_LEN + SUFFIX_LEN
 
     def __init__(self, msg_type, sender, data="", sequence=0, original=None):
         """ Prepares a packet.
@@ -345,11 +343,8 @@ class MessageContainer(object):
             PackedHash(self.sender).pack(),
             self.data)
 
-        padding = '\x00' * (self.length - self.raw_length)
         suffix = struct.pack(
-            '!' + self.FORMATS[MessageBlob.MSG_END] % len(padding),
-            len(padding),
-            padding,
+            '!' + self.FORMATS[MessageBlob.MSG_END],
             self.END)
 
         packet = header + payload + suffix
@@ -430,16 +425,10 @@ class MessageContainer(object):
             chk, offset = get2(1)
             resp = cls.FAKE_RESP(seq, chk)
 
-        total_len  = chutils.nextmul(total_len, 8)
         if total_len != len(packet):
             raise UnpackException(ExceptionType.EXC_WRONG_LENGTH, total_len,
                                   len(packet))
 
-        # pad_sz,    offset = getBlob(6)
-        # pad,       offset = cls.extract_chunk(header_fmt[7] % pad_sz,
-        #                                       cicada, offset)
-        # if pad != '\x00' * pad_sz:
-        #     raise UnpackException(ExceptionType.EXC_BAD_CHECKSUM)
         get = lambda i: MessageContainer.extract_chunk(
             cls.RAW_FORMATS[MessageBlob.MSG_PAYLOAD].raw_format[i] % (
                 payload_sz - len(PackedHash(sender).pack())), bs, 0)
@@ -482,9 +471,7 @@ class MessageContainer(object):
         pay.raw_format[1] = pay.raw_format[1] % len(self.data)
         fmts.append(pay)
 
-        padlen = self.length - self.raw_length
         end = D.ProtocolSpecifier(self.RAW_FORMATS[MessageBlob.MSG_END])
-        end.raw_format[1] = end.raw_format[1] % padlen
         fmts.append(end)
 
         chunks, desc = (sum([fmt.raw_format for fmt in fmts], []),
@@ -507,13 +494,9 @@ class MessageContainer(object):
         return D.ProtocolSpecifier(zip(chunks, desc))
 
     @property
-    def raw_length(self):
+    def length(self):
         return self.HEADER_LEN + PackedHash.MESSAGE_SIZE + \
                len(self.data) + self.SUFFIX_LEN
-
-    @property
-    def length(self):
-        return chutils.nextmul(self.raw_length, 8)
 
     @property
     def protocol(self):
