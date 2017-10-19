@@ -88,7 +88,7 @@ class ReadQueue(object):
                 # We are still waiting for the length byte.
                 if self._pkt_state == ReadQueue.PacketState.WAITING:
                     n, m = self._header_offset, self._resp_offset
-                    if len(self._pending) >= n:
+                    if len(self._pending) >= n + 4:
                         length = self._pending[n : n + 4]
                         resp = self._pending[m : m + 1]
 
