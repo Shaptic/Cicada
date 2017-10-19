@@ -32,9 +32,9 @@ To use this feature, just pass `--duplicate [number of duplicate paths]` to the 
 This can further be customized on a _per-message_ basis (which obviously requires full API interaction):
 
 ```python
-    peer = SwarmPeer("localhost", 10000)
-    peer.connect("10.0.0.1", 50000)
-    peer.send(("10.0.0.2", 50000), "hello!", duplicates=5)
+peer = SwarmPeer("localhost", 10000)
+peer.connect("10.0.0.1", 50000)
+peer.send(("10.0.0.2", 50000), "hello!", duplicates=5)
 ```
 
 ## Visualization ##
@@ -65,6 +65,9 @@ There is still a long way to go before _Cicada_ has a robust enough feature set 
   - [ ] Try breaking hash-chaining and write tests for it.
   - [ ] Upgrade the library to Python 3.
 
+## Port Forwarding ##
+Most people use devices on personal networks, and are thus hidden behind a router that is doing **n**etwork **a**ddress **t**ranslation (NAT). Similar to how BitTorrent needs to temporarily open ports in order to seed content, we need to do likewise in order to facilitate new peers into the swarm through a local peer. To do this, we use similar techniques to libtorrent [NatPMP](https://tools.ietf.org/html/rfc6886) and [UPnP](https://tools.ietf.org/html/rfc6970).
+
 ## Security & Encryption ##
 In a peer-to-peer network, it's impossible to determine what peers your traffic will travel through on the way to its destination. Standard routing through the Internet faces these same implications, but we implicitly trust that network topology more (we must, in fact, in order to gain any semblance of security).
 
@@ -75,16 +78,15 @@ If you trust the network (or at least the majority of it -- see the [Attacker Re
 If you want to hard-code secret keys, configure a key file like so:
 
 ```json
-  // keylist.json
-  {
-    "trusted_hosts": [{
-      "address": "75.23.66.101",
-      "outbound_key": "supersecretencryptionkey",
-      "inbound_key": "superduperencryptionkey"
-    }, {
-      // ...
-    }]
-  }
+// keylist.json
+{
+  "trusted_hosts": [{
+    "address": "75.23.66.101",
+    "outbound_key": "supersecretencryptionkey",
+    "inbound_key": "superduperencryptionkey"
+  }, {
+  }]
+}
 ```
 
 Then, just pass it to the command-line. Any communications between the localhost and the peer at `75.23.66.101` will be encrypted _if the other peer is also aware of the encryption keys_.

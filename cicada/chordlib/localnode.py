@@ -29,6 +29,8 @@ from ..packetlib import message
 from ..packetlib import chord as chordpkt
 from ..packetlib import utils as pktutils
 
+from ..traversal import upnp, natpmp
+
 
 def handle_failed_request(fn):
     """ Protects against cancelled requests.
