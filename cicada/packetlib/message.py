@@ -189,7 +189,6 @@ class MessageBlob(enum.Enum):
     MSG_HEADER      = 0     # used in all messages
     MSG_RESPONSE    = 1     # only in responses, describes original request
     MSG_PAYLOAD     = 2     # packet data
-    MSG_END         = 3     # suffix to indicate message termination
 
 
 class MessageType(object):
@@ -245,8 +244,7 @@ class MessageContainer(object):
 
     CHORD_PR  = "\x63\x68"      # ch
     CICADA_PR = "\x63\x69"      # ci
-    VERSION   = 0x0004          # v0.4
-    END       = "\x47\x4b\x04"  # GK[EoT]
+    VERSION   = 0x0005          # v0.5
 
     RAW_FORMATS = {
         MessageBlob.MSG_HEADER: debug.ProtocolSpecifier([
@@ -269,21 +267,16 @@ class MessageContainer(object):
             (PackedHash.EMBED_FORMAT,
                      "sender hash"),
             ("%ds",  "P-byte payload string"),
-        ]),
-        MessageBlob.MSG_END: debug.ProtocolSpecifier([
-            ("3s",   "end-of-message"),
-        ]),
+        ])
     }
     FORMATS  = {
         MessageBlob.MSG_HEADER:   RAW_FORMATS[MessageBlob.MSG_HEADER].format,
         MessageBlob.MSG_RESPONSE: RAW_FORMATS[MessageBlob.MSG_RESPONSE].format,
         MessageBlob.MSG_PAYLOAD:  RAW_FORMATS[MessageBlob.MSG_PAYLOAD].format,
-        MessageBlob.MSG_END:      RAW_FORMATS[MessageBlob.MSG_END].format,
     }
     HEADER_LEN   = struct.calcsize('!' + FORMATS[MessageBlob.MSG_HEADER])
     RESPONSE_LEN = struct.calcsize('!' + FORMATS[MessageBlob.MSG_RESPONSE])
-    SUFFIX_LEN   = struct.calcsize('!' + FORMATS[MessageBlob.MSG_END])
-    MIN_MESSAGE_LEN = HEADER_LEN + SUFFIX_LEN
+    MIN_MESSAGE_LEN = HEADER_LEN
 
     def __init__(self, msg_type, sender, data="", sequence=0, original=None):
         """ Prepares a packet.
@@ -343,11 +336,7 @@ class MessageContainer(object):
             PackedHash(self.sender).pack(),
             self.data)
 
-        suffix = struct.pack(
-            '!' + self.FORMATS[MessageBlob.MSG_END],
-            self.END)
-
-        packet = header + payload + suffix
+        packet = header + payload
         self.checksum = md5.md5(packet).digest()
 
         # Inject the checksum into the packet at the right place.
@@ -411,7 +400,7 @@ class MessageContainer(object):
 
         resp = None
         data_offset = cls.HEADER_LEN
-        total_len = data_offset + payload_sz + cls.SUFFIX_LEN
+        total_len = data_offset + payload_sz
 
         if is_resp:
             data_offset += cls.RESPONSE_LEN
@@ -485,7 +474,6 @@ class MessageContainer(object):
         fmts = [
             MessageContainer.RAW_FORMATS[MessageBlob.MSG_HEADER],
             MessageContainer.RAW_FORMATS[MessageBlob.MSG_PAYLOAD],
-            MessageContainer.RAW_FORMATS[MessageBlob.MSG_END],
         ]
         chunks, desc = (sum([fmt.raw_format for fmt in fmts], []),
                         sum([list(fmt.descriptions) for fmt in fmts], []))
@@ -495,8 +483,7 @@ class MessageContainer(object):
 
     @property
     def length(self):
-        return self.HEADER_LEN + PackedHash.MESSAGE_SIZE + \
-               len(self.data) + self.SUFFIX_LEN
+        return self.HEADER_LEN + PackedHash.MESSAGE_SIZE + len(self.data)
 
     @property
     def protocol(self):
@@ -581,9 +568,6 @@ EXCEPTION_STRINGS = {
     ExceptionType.EXC_NO_PREFIX: \
         "No message prefix found! Expected '%s' or '%s' to start packet." % (
             MessageContainer.CHORD_PR, MessageContainer.CICADA_PR),
-    ExceptionType.EXC_NO_SUFFIX: \
-        "No message end found! Expected '%s' to end packet." % (
-            MessageContainer.END),
     ExceptionType.EXC_WRONG_PROTOCOL: ''.join([
         "Unsupported protocol! Expected '",
         MessageContainer.CHORD_PR, "' or '",

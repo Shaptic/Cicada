@@ -54,8 +54,6 @@ class ReadQueue(object):
     NOTE: Because of the way socket reads are handled, this code is definitely
           specific to Python 2.
     """
-    BUFFER_END_BYTES = struct.pack("!%ds" % len(message.MessageContainer.END),
-                                   message.MessageContainer.END)
 
     class PacketState(enum.Enum):
         WAITING = 0
@@ -84,6 +82,7 @@ class ReadQueue(object):
         """
         with self._queue_lock:
             try:
+                L.debug("Received data: %s", repr(data))
                 self._pending += data
 
                 # We are still waiting for the length byte.
@@ -96,28 +95,23 @@ class ReadQueue(object):
                         self._next_resp, = struct.unpack('!?', resp)
                         self._next_length, = struct.unpack('!I', length)
                         self._pkt_state = ReadQueue.PacketState.READING
+                        L.debug("Extracted data from packet: resp=%s,len=%d",
+                                self._next_resp, self._next_length)
 
                 if self._pkt_state == ReadQueue.PacketState.READING:
                     base_length = message.MessageContainer.MIN_MESSAGE_LEN
                     if self._next_resp:
                         base_length += message.MessageContainer.RESPONSE_LEN
-                    if len(self._pending) == base_length + self._next_length:
-                        try:
-                            pkt = message.MessageContainer.unpack(self._pending)
-                            self._queue.append(pkt)
-                        except message.UnpackException:
-                            pass
 
-                # index = self._pending.find(self.BUFFER_END_BYTES)
-                # if index == -1: return
-
-                # index += len(self.BUFFER_END_BYTES)
-                # relevant = self._pending[:index]
-                # pkt = message.MessageContainer.unpack(relevant)
-                # self._pending = self._pending[index:]
-                # if self._pending:
-                #     L.debug("Remainder: %s", repr(self._pending))
-                # self.queue.append(pkt)
+                    total_length = base_length + self._next_length
+                    if len(self._pending) >= base_length + self._next_length:
+                        partial = self._pending[ : total_length]
+                        pkt = message.MessageContainer.unpack(partial)
+                        self._pending = self._pending[total_length : ]
+                        L.info("Received full packet in queue: %s", pkt)
+                        L.info("Remaining data: %s", repr(self._pending))
+                        self._queue.append(pkt)
+                        self._pkt_state = ReadQueue.PacketState.WAITING
 
             except message.UnpackException, e:
                 import traceback
