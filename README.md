@@ -66,14 +66,16 @@ There is still a long way to go before _Cicada_ has a robust enough feature set 
   - [ ] Upgrade the library to Python 3.
 
 ## Port Forwarding ##
-Most people use devices on personal networks, and are thus hidden behind a router that is doing **n**etwork **a**ddress **t**ranslation (NAT). Similar to how BitTorrent needs to temporarily open ports in order to seed content, we need to do likewise in order to facilitate new peers into the swarm through a local peer. To do this, we use similar techniques to libtorrent [NatPMP](https://tools.ietf.org/html/rfc6886) and [UPnP](https://tools.ietf.org/html/rfc6970).
+Most people use devices on personal networks, and are thus hidden behind a router that is doing **n**etwork **a**ddress **t**ranslation (NAT). Similar to how BitTorrent needs to temporarily open ports in order to seed content, we need to do likewise in order to facilitate new peers into the swarm through a local peer. To do this, we use similar techniques to libtorrent, namely [NatPMP](https://tools.ietf.org/html/rfc6886) and [UPnP](https://tools.ietf.org/html/rfc6970). These will allow you to create a swarm peer without worrying about whether or not it will be able to be accessed from the Internet.  
+**Estimated Release**: 0.2.1-alpha
 
 ## Security & Encryption ##
 In a peer-to-peer network, it's impossible to determine what peers your traffic will travel through on the way to its destination. Standard routing through the Internet faces these same implications, but we implicitly trust that network topology more (we must, in fact, in order to gain any semblance of security).
 
 The only way to _ensure_ secure communications that are immune to Man-in-the-Middle attacks and packet sniffing is to establish a trusted set of encryption keys before using the network. This can be via secure email, and encrypted telephone call, exchanging symmetric keys in person, etc. Once these keys are exchanged, _Cicada_ can use them directly to encrypt all outgoing communication to a particular peer.
 
-If you trust the network (or at least the majority of it -- see the [Attacker Resilience](#attacker-resilience) section below), you can use standard public-key authentication methods to establish an SSL communcation stream between particular peers. That is to say, the traffic is still routed through the other peers, but is encrypted with SSL.
+If you trust the network (or at least the majority of it -- see the [Attacker Resilience](#attacker-resilience) section below), you can use standard public-key authentication methods to establish an SSL communcation stream between particular peers. That is to say, the traffic is still routed through the other peers, but is encrypted with SSL.  
+**Estimated Release**: 1.0.0-rc
 
 If you want to hard-code secret keys, configure a key file like so:
 
@@ -92,3 +94,4 @@ If you want to hard-code secret keys, configure a key file like so:
 Then, just pass it to the command-line. Any communications between the localhost and the peer at `75.23.66.101` will be encrypted _if the other peer is also aware of the encryption keys_.
 
     $ cicada wlan0:10000 --join 75.23.66.101:50000 --keys keylist.json
+

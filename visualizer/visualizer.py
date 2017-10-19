@@ -1,6 +1,9 @@
 #!/usr/bin/env python2
 """ A visual respresentation of a Chord system.
 """
+import sys
+sys.path.append(".")    # if run from cicada/
+sys.path.append("..")   # if run from cicada/visualizer/
 
 import enum
 import math
@@ -17,8 +20,8 @@ from cicada.swarmlib import swarmnode
 from cicada.chordlib import localnode
 from cicada.chordlib import utils
 
-from cicada.visualizer.window  import Window
-from cicada.visualizer.math    import Vector
+from window  import Window
+from vmath   import Vector
 
 
 class DrawState(enum.Enum):

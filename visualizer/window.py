@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 import pygame
-from ..visualizer import math as vmath
+import vmath
 
 class Window(object):
     WIDTH  = 1400
