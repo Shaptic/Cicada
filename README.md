@@ -31,9 +31,11 @@ To use this feature, just pass `--duplicate [number of duplicate paths]` to the 
 
 This can further be customized on a _per-message_ basis (which obviously requires full API interaction):
 
+```python
     peer = SwarmPeer("localhost", 10000)
     peer.connect("10.0.0.1", 50000)
     peer.send(("10.0.0.2", 50000), "hello!", duplicates=5)
+```
 
 ## Visualization ##
 When running the _Cicada_ visualization tool, `visualizer.py`, there are a number of controls for manipulating the behavior of the peers:
@@ -70,14 +72,21 @@ The only way to _ensure_ secure communications that are immune to Man-in-the-Mid
 
 If you trust the network (or at least the majority of it -- see the [Attacker Resilience](#attacker-resilience) section below), you can use standard public-key authentication methods to establish an SSL communcation stream between particular peers. That is to say, the traffic is still routed through the other peers, but is encrypted with SSL.
 
-    $ cat keylist.json
-    { 
-      "trusted_hosts": [{
-        "address": "75.23.66.101",
-        "outbound_key": "supersecretencryptionkey",
-        "inbound_key": "superduperencryptionkey"
-      },{
-        // ...
-      }]
-    }
-    $ cicada wlan0:10000 --join 10.0.0.1:50000 --keys keylist.json
+If you want to hard-code secret keys, configure a key file like so:
+
+```json
+  // keylist.json
+  {
+    "trusted_hosts": [{
+      "address": "75.23.66.101",
+      "outbound_key": "supersecretencryptionkey",
+      "inbound_key": "superduperencryptionkey"
+    }, {
+      // ...
+    }]
+  }
+```
+
+Then, just pass it to the command-line. Any communications between the localhost and the peer at `75.23.66.101` will be encrypted _if the other peer is also aware of the encryption keys_.
+
+    $ cicada wlan0:10000 --join 75.23.66.101:50000 --keys keylist.json
