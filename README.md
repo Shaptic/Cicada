@@ -69,7 +69,7 @@ There is still a long way to go before _Cicada_ has a robust enough feature set 
 
 ## Port Forwarding ##
 Most people use devices on personal networks, and are thus hidden behind a router that is doing **n**etwork **a**ddress **t**ranslation (NAT). Similar to how BitTorrent needs to temporarily open ports in order to seed content, we need to do likewise in order to facilitate new peers into the swarm through a local peer. To do this, we use similar techniques to libtorrent, namely [NatPMP](https://tools.ietf.org/html/rfc6886) and [UPnP](https://tools.ietf.org/html/rfc6970). These will allow you to create a swarm peer without worrying about whether or not it will be able to be accessed from the Internet.  
-**Estimated Release**: 0.2.1-alpha
+**Estimated Release**: 0.3.0-alpha
 
 ## Security & Encryption ##
 In a peer-to-peer network, it's impossible to determine what peers your traffic will travel through on the way to its destination. Standard routing through the Internet faces these same implications, but we implicitly trust that network topology more (we must, in fact, in order to gain any semblance of security).
