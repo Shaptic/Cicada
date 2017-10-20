@@ -13,6 +13,7 @@ class UPnP(portmapper.PortMapper):
     def __init__(self, local_address=None):
         super(UPnP, self).__init__(local_address)
         self._upnp = upnp.UPnP()
+        self.name = "UPnP"
 
     def create(self):
         """ Discovers the UPnP server.
@@ -30,18 +31,26 @@ class UPnP(portmapper.PortMapper):
         if not rv: return False
 
         try:
-            self._upnp.addportmapping(external_port, protocol.upper(),
-                                  self.local_address, local_port,
-                                  "Cicada server, %d -> %d" % (
-                                    local_port, external_port), None)
+            desc = "Cicada, %d:%d" % (local_port, external_port)
+            return self._upnp.addportmapping(external_port, protocol.upper(),
+                                             self.local_address, local_port,
+                                             desc, None)
         except:
             self._remove_from_cache(local_port)
+
+    def delete_port_mapping(self, external_port, protocol="tcp"):
+        """ Removes an existing port mapping.
+        """
+        try:
+            return self._upnp.deleteportmapping(external_port, protocol)
+        except:
+            return False
 
     def cleanup(self):
         """ Deletes all port mappings and clears the cache.
         """
         for local, pair in self.mappings.iteritems():
             external, protocol = pair
-            self._upnp.deleteportmapping(external, protocol)
+            self.delete_port_mapping(external, protocol)
 
         super(UPnP, self).cleanup()

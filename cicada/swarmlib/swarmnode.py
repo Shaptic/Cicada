@@ -94,10 +94,9 @@ class SwarmPeer(object):
             raise TypeError("expected (host, port), Hash, or SwarmPeer, "
                             " got: %s" % type(target))
 
-        pkt = cicadapkt.DataMessage.make_packet(self.peer.hash, data)
+        pkt = cicadapkt.DataMessage(data)
         peer = self.peer.lookup(dest, self.NOOP_RESPONSE, None, data=pkt.pack())
-
-        exclusion = set(peer)
+        exclusion = set((peer, ))
         for i in xrange(duplicates):
             try:
                 peer = self.peer.lookup(dest, self.NOOP_RESPONSE, None,
@@ -148,6 +147,21 @@ class SwarmPeer(object):
         """
         return self.peer.lookup(value, on_result, None)
 
+    @bind_first
+    def close(self):
+        """ Closes all background tasks and shuts down the peer.
+        """
+        self.peer.stable.stop_running()
+        self.peer.router.stop_running()
+        self.peer.processor.stop_running()
+        self.peer.listen_thread.stop_running()
+
+        self.peer.stable.join(5)
+        self.peer.router.join(5)
+        self.peer.processor.join(5)
+        self.peer.listen_thread.join(5)
+        self.peer = None
+
     @property
     @bind_first
     def listener(self):
@@ -162,6 +176,10 @@ class SwarmPeer(object):
     @bind_first
     def peers(self):
         return self.peer.peers
+
+    @property
+    def peek(self):
+        self._read_queue.ready
 
     def _on_data(self, source_peer, data):
         self._read_queue.push((source_peer, data))

@@ -5,4 +5,4 @@ class NatPMP(portmapper.PortMapper):
     """ Manages and caches port mappings for listeners.
     """
     def __init__(self, local_address=None):
-        pass
+        self.name = "NatPMP"

@@ -449,7 +449,8 @@ class LocalNode(chordnode.ChordNode):
         if iv.within_open(int(value)) or value == self.hash:
             L.info("  %d falls into our interval, (%d, %d].", value,
                    pred.hash, self.hash)
-            return on_response(self, None)
+            on_response(self, None)
+            return self
 
         # If it's not us, find the closest hop we know of.
         nearest = self._find_closest_peer(value)

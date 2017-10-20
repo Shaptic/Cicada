@@ -1,4 +1,5 @@
 #! /usr/bin/env python2
+import socket
 
 
 class PortMapper(object):
@@ -7,7 +8,7 @@ class PortMapper(object):
     def __init__(self, local_address=None):
         # Learn local interface address, if not provided.
         if not local_address:
-            s = socket.socket(AF_INET, SOCK_DGRAM)
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             local_address = s.getsockname()[0]
 
