@@ -52,7 +52,9 @@ There is still a long way to go before _Cicada_ has a robust enough feature set 
 
   - [x] Update the in-code comments to make sure everything is current.
   - [ ] Improve resilience to peers dropping.
-  - [ ] Add `duplicates=` support to the command-line interface.
+  - [ ] Differentiate between local binding address and swarm-wide peer ID, which depends on the external IP address.
+  - [x] Add `duplicates=` support to the command-line interface.
+  - [x] Improve the CLI client to use the high-level `SwarmPeer` API.
   - [ ] Add proper per-peer logging so debugging isn't miserable, and maybe a log viewer to go with it?
   - [ ] Fix socket error handling, popping the sockets off the stream list.
   - [x] ~~Introduce a way for a neighboring peer to immediately requery for the new successor, rather than waiting for the arbitrary stabilization routine or an `INFO` ping.~~

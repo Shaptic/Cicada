@@ -5,74 +5,201 @@ import logging
 import argparse
 
 from cicada import chordlib
-from cicada.chordlib import localnode as localnode
-from cicada.chordlib import utils     as chutils
+from cicada import traversal
+from cicada.chordlib  import log
+from cicada.swarmlib  import swarmnode
 
-def main(host_address, join_address=None):
-    """ Executes a normal Chord workflow.
 
-    A single Chord node is chosen as the root of the ring. All other peers will
-    join _through_ this ring (or other rings that exist within the ring).
+class RuntimeFormatError(ValueError):
+    pass
 
-    If executed within the same process, this is the flow that will occur if
-    there is a single root and two joining peers:
-        - A node A establishes itself as the root: it has a `listener` socket
-          waiting for new connections on a separate thread T_a.
-        - A node B connects to node A, sending it a JOIN request through its
-          socker `joiner` (synchronously). This communication happens through
-          `B.joiner`, resulting in a trigger in `A.T_a` on the socket
-          `listener`.
-        - A responds with RJOIN on its `listener`, which is received by B's
-          joiner. A adds `peer` to its internal `A.peers` list.
-        - Once B receives it, the joiner socket is added to B's peer list.
 
-    At this point, B will communicate and receive updates from B via its peer
-    socket, and vice-versa.
+class RuntimeParser(object):
+    """ Parses a runtime command file and executes it.
+
+    == Specification ==
+
+    Each line specifies a particular operation to be executed. These are
+    executed sequentially. The commands, with their parameters, are:
+
+        - SEND [host] [port] [data...]
+          Sends a message to a particular address. [port] must be convertible to
+          an integer.
+
+        - RECV [count]
+          Waits for a message to be received from anyone. The [count] parameter
+          is optional, and indicates the number of messages to wait for.
+
+        - BCAST [data...]
+          Sends the specified data to the entire swarm.
+
+        - OPT key1=value key2=value [key=value...]
+          Processes and sets the configurable options. These can be seen in the
+          `VALID_OPTS` class dictionary below. All subsequent lines will have
+          these options applied to them.
+
+        - WAIT [time (s)]
+          Waits for an incoming connection for a certain amount of time. If set
+          to -1, waits indefinitely. This is useful for the first peer in a
+          swarm.
+
+    You can also use the first character of each command as short-hand.
+
+    TODO: Add PAUSE functionality, in order to let users respond to received
+          messages during the execution.
     """
-    chordlib.log.info("main(%s, %s)" % (host_address, join_address))
-    root = localnode.LocalNode("%s:%d" % host_address, host_address)
+    VALID_OPTS = {
+        "duplicates": int,
+    }
 
-    if join_address is not None:
-        root.join_ring(join_address)
+    def __init__(self, filename):
+        self.file = open(filename, "r")
+        self.options = {
+            "duplicates": 0
+        }
 
-    while True:
-        time.sleep(60)
+    def run(self, peer):
+        self.peer = peer
+        for line in self.file.readlines():
+            if not line.strip() or line.strip().startswith('#'): continue
+            parts = line.split(' ')
+            if len(parts) == 1:
+                cmd, args = parts[0], ""
+            else:
+                cmd, args = line.split(' ', 1)
+                args = args.strip()
+            cmd = cmd.upper()
 
-    return (root, )
+            print "Running", cmd
+            if cmd in ("S", "SEND"):
+                try:
+                    args = args.split(' ', 2)
+                    if len(args) <= 2:
+                        raise ValueError()
+                    target, data = (args[0], int(args[1])), args[2]
+
+                except ValueError:
+                     raise RuntimeFormatError("SEND requires: host port data")
+
+                self._send(target, data, duplicates=self.options["duplicates"])
+                print "done"
+
+            elif cmd in ("R", "RECV"):
+                try:
+                    count = int(args)
+                    self._recv(count)
+
+                except ValueError, e:
+                    print str(e)
+                    raise RuntimeFormatError("RECV requires: count")
+
+            elif cmd in ("O", "OPT"):
+                for pair in args.split(' '):
+                    k, v = pair.split('=')
+                    if k not in self.VALID_OPTS:
+                        raise RuntimeFormatError("OPT: invalid option '%s'" % k)
+
+                    cast_v = self.VALID_OPTS[k](v)
+                    print "Set %s = %s [%s]" % (k.lower(), repr(cast_v),
+                          type(cast_v))
+                    self.options[k.lower()] = cast_v
+
+            elif cmd in ("B", "BCAST"):
+                self._broadcast(args)
+
+            elif cmd in ("W", "WAIT"):
+                seconds = -1
+                try:
+                    if args.strip():
+                        seconds = int(args)
+
+                except ValueError:
+                    raise RuntimeFormatError("WAIT: invalid time '%s'" % args)
+
+                waited = 0
+                print "Waiting for %d seconds for a connection." % seconds
+                while seconds == -1 or waited < seconds:
+                    if len(peer.peer.peers) > 0:
+                        break
+                    waited += 1
+                    time.sleep(1)
+                else:
+                    raise RuntimeError("Peers didn't connect before timeout.")
+
+            else:
+                raise RuntimeFormatError("Invalid command: '%s'" % cmd)
+
+    def _broadcast(self, data):
+        print "Broadcasting %d bytes." % len(data)
+        self.peer.broadcast(data, [])
+
+    def _send(self, target, data, **kwargs):
+        print "Sending %d bytes to %s:%d." % (len(data), target[0], target[1])
+        self.peer.send(target, data, **kwargs)
+
+    def _recv(self, count):
+        for i in xrange(count):
+            src, data, more = self.peer.recv()
+            print "%d/%d -- %s:%d: %s" % (i + 1, count, src.chord_addr[0],
+                  src.chord_addr[1], data)
+
+
+def main(args):
+    """ Runs an interactive Cicada session.
+    """
+    with traversal.PortMapping(args.port) as pm:
+        if not pm or pm.port is False:
+            print "Failed to map an external port. Try:"
+            print "  - Open a port manually and pass it to --port, " + \
+                  "then include --no-forwarding."
+            print "  - Enabling NatPMP in your router, if applicable."
+            print "  - Enabling UPnP in your router."
+            return
+
+        # if args.no_forwarding:
+        ip = args.interface
+        # else:
+        #     ip = traversal.PortMapper.external_ip
+
+        print "Binding %s:%d" % (ip, pm.port)
+        peer = swarmnode.SwarmPeer({})
+        peer.bind(ip, pm.port)
+        if args.join:
+            join_address = args.join.split(':')
+            peer.connect(join_address[0], int(join_address[1]), args.timeout)
+
+        rtp = RuntimeParser(args.runtime)
+        rtp.run(peer)
+        return peer
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Interact with a Chord ring.",
-        epilog="Addresses are expected to be colon-separated pairs of an "
-               "IP address (or a hostname) and a port number. For example: "
-               "localhost:1234 or 10.0.0.1:5678.")
+        description="Runs a partially-interactive sequence of commands on "
+                    "a Cicada swarm.")
 
-    parser.add_argument("listener", metavar="address",
-        help="the address to listen on for incoming Chord peers")
-    parser.add_argument("--join", dest="join_address", metavar="address",
-        help="the address of an existing Chord ring to join")
-    parser.add_argument("--duplicate", dest="duplicates", metavar="N",
-        help="the number of extra routes to take per-message "
-             "[NOT IMPLEMENTED]")
+    parser.add_argument("runtime",
+                        help="")
+    parser.add_argument("--interface", metavar="IFACE", default="",
+                        help="the interface to bind on")
+    parser.add_argument("--port", metavar="N", default=0xC1CA, type=int,
+                        help="the internal (and external!) port to listen on "
+                             "(defaults to 0xC1CA, or 49610)")
+    parser.add_argument("--no-forwarding", default=False, action="store_true",
+                        help="don't attempt to perform an external mapping")
+    parser.add_argument("--timeout", default=10, type=int,
+                        help="the amount of time to wait while joining")
+    parser.add_argument("--forwarding-attempts", default=5, type=int,
+                        help="the number of ports to try for port mapping, "
+                             "starting from the port passed in")
+    parser.add_argument("--join", metavar="HOST:PORT",
+                        help="joins an existing Cicada ring")
     parser.add_argument("--stdout", dest="screenlog", action="store_true",
-        help="write all logging output to stdout in addition to the logfile")
+                        help="write all logging output to stdout in addition "
+                             "to the log file")
     parser.add_argument("--debug", dest="debuglog", action="store_true",
-        help="include DEBUG-level output in logging")
-
+                        help="include DEBUG-level output in logging")
     args = parser.parse_args()
-    if args.listener.find(':') == -1:
-        parser.error("Invalid address! Expected 'ip:port' for listener.")
-
-    server = args.listener.split(':')
-    server = (server[0], int(server[1]))
-
-    client = None
-    if args.join_address:
-        if args.join_address.find(':') == -1:
-            parser.error("Invalid address! Expected 'ip:port' for joiner.")
-
-        client = args.join_address.split(':')
-        client = (client[0], int(client[1]))
 
     if args.screenlog:
         h = logging.StreamHandler(sys.stdout)
@@ -82,17 +209,10 @@ if __name__ == "__main__":
     if args.debuglog:
         chordlib.log.setLevel(logging.DEBUG)
 
-    ring = main(server, join_address=client)
-    time.sleep(60)
+    try:
+        peer = main(args)
+        print "Shutting down background stabilizer threads."
+        peer.close()
 
-    print "Shutting down background stabilizer threads."
-    for node in ring:
-        node.stable.stop_running()
-        node.dispatcher.stop_running()
-        node.listen_thread.stop_running()
-
-    for i, node in enumerate(ring):
-        node.stable.join(5)
-        node.dispatcher.join(5)
-        node.listen_thread.join(5)
-        print "Shut down %d/%d...\r" % (i + 1, len(ring)),
+    finally:
+        print "Shut down."
