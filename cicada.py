@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 import sys
 import time
+import socket
 import logging
 import argparse
 
@@ -156,14 +157,16 @@ def main(args):
             print "  - Enabling UPnP in your router."
             return
 
-        # if args.forward:
         ip = args.interface
-        # else:
-        #     ip = traversal.PortMapper.external_ip
+        if not args.forward:
+            eip = args.interface
+        else:
+            eip = traversal.PortMapper.external_ip
 
         print "Binding %s:%d" % (ip, pm.port)
-        peer = swarmnode.SwarmPeer({})
-        peer.bind(ip, pm.port)
+        print "External binding is %s:%d" % (eip, pm.eport)
+        peer = swarmnode.SwarmPeer()
+        peer.bind(ip, pm.port, socket.gethostbyname(eip), pm.eport)
         if args.join:
             join_address = args.join.split(':')
             peer.connect(join_address[0], int(join_address[1]), args.timeout)

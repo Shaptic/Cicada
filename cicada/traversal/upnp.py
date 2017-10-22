@@ -42,9 +42,9 @@ class UPnP(portmapper.PortMapper):
         """ Removes an existing port mapping.
         """
         try:
-            return self._upnp.deleteportmapping(self._mappings[local_port],
-                                                protocol)
-        except:
+            return self._upnp.deleteportmapping(*self.mappings[local_port])
+        except Exception, e:
+            print "A deletion error occurred:", str(e)
             return False
 
     def cleanup(self):

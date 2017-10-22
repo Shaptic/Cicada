@@ -50,23 +50,22 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
 # Feature Work #
 There is still a long way to go before _Cicada_ has a robust enough feature set for consumption. This section outlines future plans. In the short term:
 
-  - [x] Update the in-code comments to make sure everything is current.
   - [ ] Improve resilience to peers dropping.
-  - [x] Add NatPMP support.
-  - [ ] Differentiate between local binding address and swarm-wide peer ID, which depends on the external IP address.
-  - [x] Add `duplicates=` support to the command-line interface.
-  - [x] Improve the CLI client to use the high-level `SwarmPeer` API.
   - [ ] Add proper per-peer logging so debugging isn't miserable, and maybe a log viewer to go with it?
   - [ ] Fix socket error handling, popping the sockets off the stream list.
-  - [x] ~~Introduce a way for a neighboring peer to immediately requery for the new successor, rather than waiting for the arbitrary stabilization routine or an `INFO` ping.~~
   - [ ] Refactor the _Cicada_-layer protocol to have better packing, especially regarding the message types.
-  - [x] Refactor message queueing so it doesn't arbitrarily search for the suffix bytes, since that breaks when someone actually tries sending them as high-level data.
-  - [ ] Add `ProtocolSpecifier` info to all of the `BaseMessage` child classes.
   - [ ] Decide on a license and add it.
-  - [x] Convert the docstring tests to unit tests.
-  - [x] Write more unit tests.
   - [ ] Try breaking hash-chaining and write tests for it.
   - [ ] Upgrade the library to Python 3.
+  - [x] Update the in-code comments to make sure everything is current.
+  - [x] Add NatPMP support.
+  - [x] Differentiate between local binding address and swarm-wide peer ID, which depends on the external IP address.
+  - [x] Add `duplicates=` support to the command-line interface.
+  - [x] Improve the CLI client to use the high-level `SwarmPeer` API.
+  - [x] ~~Introduce a way for a neighboring peer to immediately requery for the new successor, rather than waiting for the arbitrary stabilization routine or an `INFO` ping.~~
+  - [x] Refactor message queueing so it doesn't arbitrarily search for the suffix bytes, since that breaks when someone actually tries sending them as high-level data.
+  - [x] Convert the docstring tests to unit tests.
+  - [x] Write more unit tests.
 
 ## Port Forwarding ##
 Most people use devices on personal networks, and are thus hidden behind a router that is doing **n**etwork **a**ddress **t**ranslation (NAT). Similar to how BitTorrent needs to temporarily open ports in order to seed content, we need to do likewise in order to facilitate new peers into the swarm through a local peer. To do this, we use similar techniques to libtorrent, namely [NatPMP](https://tools.ietf.org/html/rfc6886) and [UPnP](https://tools.ietf.org/html/rfc6970). These will allow you to create a swarm peer without worrying about whether or not it will be able to be accessed from the Internet.  

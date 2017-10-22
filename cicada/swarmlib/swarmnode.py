@@ -34,7 +34,7 @@ class SwarmPeer(object):
     """
     NOOP_RESPONSE = lambda *args: None
 
-    def __init__(self, hooks):
+    def __init__(self, hooks={}):
         self.peer = None    # the peer in the network, established on `bind()`
         self._read_queue = pktutils.ConditionQueue()
         self.hooks = {
@@ -42,8 +42,8 @@ class SwarmPeer(object):
             "recv": hooks.get("recv", self.NOOP_RESPONSE),
         }
 
-    def bind(self, hostname, port):
-        data = "%s:%d" % (hostname, port)
+    def bind(self, hostname, port, external_ip, external_port):
+        data = "%s:%d" % (external_ip, external_port)
         self.peer = localnode.LocalNode(data, (hostname, port),
                                         on_send=self.hooks["send"],
                                         on_data=self._on_data)

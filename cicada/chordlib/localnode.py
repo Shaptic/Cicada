@@ -78,14 +78,13 @@ class LocalNode(chordnode.ChordNode):
         self.data = data
 
         self.on_remove = lambda *args: None
-        self.on_send = on_send
         self.on_data_packet = on_data
-        # self.on_recv = on_message_handler
+        self.on_send = on_send
 
         super(LocalNode, self).__init__(routing.Hash(value=data),
                                         self.listener.local)
-        L.info("Created local peer with hash %d on %s:%d.",
-               self.hash, self.chord_addr[0], self.chord_addr[1])
+        L.info("Created local peer with hash %s on %s:%d.",
+               str(int(self.hash))[:8], self.chord_addr[0], self.chord_addr[1])
 
         self.routing_table = routing.RoutingTable(self, mod=routing.HASHMOD)
 
@@ -357,7 +356,7 @@ class LocalNode(chordnode.ChordNode):
             L.warning("Unknown socket source? %s:%d" % sock.remote)
             node = self.create_peer(msg.sender, node.chord_addr, socket=sock)
 
-        L.info("Received info from a peer: %s", msg.sender)
+        L.info("Received info from a peer: %s", str(int(msg.sender))[:8])
         L.info("    Successor on: %s:%d",   *response.successor.chord_addr)
         L.info("    Predecessor on: %s:%d", *response.predecessor.chord_addr)
 
