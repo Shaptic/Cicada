@@ -1,9 +1,10 @@
 """ Establishes the user-facing API.
 """
 import struct
+import socket
 
-from ..         import chordlib
-from ..         import packetlib
+from .. import chordlib
+from .. import packetlib
 
 from ..chordlib  import localnode
 from ..packetlib import message as pktmsg
@@ -38,15 +39,21 @@ class SwarmPeer(object):
         self.peer = None    # the peer in the network, established on `bind()`
         self._read_queue = pktutils.ConditionQueue()
         self.hooks = {
-            "send": hooks.get("send", self.NOOP_RESPONSE),
-            "recv": hooks.get("recv", self.NOOP_RESPONSE),
+            "send":     hooks.get("send", self.NOOP_RESPONSE),
+            "recv":     hooks.get("recv", self.NOOP_RESPONSE),
+            "new_peer": hooks.get("new_peer", self.NOOP_RESPONSE)
         }
 
-    def bind(self, hostname, port, external_ip, external_port):
+    def bind(self, hostname, port, external_ip=None, external_port=None):
+        if external_port is None and external_ip is None:
+            external_ip = socket.gethostbyname(hostname)
+            external_port = port
+
         data = "%s:%d" % (external_ip, external_port)
         self.peer = localnode.LocalNode(data, (hostname, port),
                                         on_send=self.hooks["send"],
-                                        on_data=self._on_data)
+                                        on_data=self._on_data,
+                                        on_peer=self.hooks["new_peer"])
 
     @bind_first
     def connect(self, network_host, network_port, timeout=10):
@@ -62,8 +69,8 @@ class SwarmPeer(object):
         """
         peers = set(self.peer.routing_table.unique_iter(0))
 
-        pkt = cicadapkt.BroadcastMessage(data, map(lambda x: x.hash, peers),
-                                         visited=visited)
+        pkt = cicadapkt.BroadcastMessage.make_packet(data,
+            map(lambda x: x.hash, peers), visited=visited)
         for peer in filter(lambda p: p.hash not in visited, peers):
             self.peer.lookup(peer.hash, self.NOOP_RESPONSE, None,
                              data=pkt.pack())
@@ -94,7 +101,7 @@ class SwarmPeer(object):
             raise TypeError("expected (host, port), Hash, or SwarmPeer, "
                             " got: %s" % type(target))
 
-        pkt = cicadapkt.DataMessage(data)
+        pkt = cicadapkt.DataMessage.make_packet(data)
         peer = self.peer.lookup(dest, self.NOOP_RESPONSE, None, data=pkt.pack())
         exclusion = set((peer, ))
         for i in xrange(duplicates):
@@ -123,13 +130,13 @@ class SwarmPeer(object):
             # Process Cicada messages first.
             # TODO: put this in a more sensible place.
             msg_type, = struct.unpack("!H", data[:2])
-            if msg_type == cicadapkt.BroadcastMessage.SECONDARY_TYPE:
+            if msg_type == cicadapkt.BroadcastMessage.CI_TYPE:
                 pkt = cicadapkt.BroadcastMessage.unpack(data)
                 pkt.visited.append(source.hash)     # sender has been visited
                 self.broadcast(pkt.data, pkt.visited)
                 data = pkt.data
 
-            elif msg_type == cicadapkt.DataMessage.SECONDARY_TYPE:
+            elif msg_type == cicadapkt.DataMessage.CI_TYPE:
                 pkt = cicadapkt.DataMessage.unpack(data)
                 data = pkt.data
 
@@ -186,25 +193,3 @@ class SwarmPeer(object):
 
     def __repr__(self):
         return repr(self.peer)
-
-
-if __name__ == '__main__':
-    a, b = SwarmPeer(), SwarmPeer()
-
-    def src_on_recv(source, packet, more):
-        print "Received '%s' from %s:%d." % (
-            repr(packet), source.listener[0], source.listener[1])
-
-    def dst_on_recv(source, packet, more):
-        src_on_recv(source, packet, more)
-        print "Echoing."
-        b.send(source, packet[::-1])
-
-    a.bind("localhost", 0xC1CADA & 0xFFFF)
-    b.bind("localhost", 0xC1CADA & 0xFFFE)
-
-    a.add_receive_hook(src_on_recv)
-    b.add_receive_hook(dst_on_recv)
-
-    b.connect(a.listener)
-    a.send(b, "ECHO ME")

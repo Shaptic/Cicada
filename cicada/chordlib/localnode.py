@@ -52,7 +52,8 @@ class LocalNode(chordnode.ChordNode):
     """
     def __init__(self, data, bind_addr,
                  on_send=lambda *args: None,
-                 on_data=lambda d: None):
+                 on_data=lambda d: None,
+                 on_peer=lambda a: None):
         """ Creates a node on a specific address with specific data.
 
         Typically, the data that you pass is simply a string representation of
@@ -80,6 +81,7 @@ class LocalNode(chordnode.ChordNode):
         self.on_remove = lambda *args: None
         self.on_data_packet = on_data
         self.on_send = on_send
+        self.on_peer = on_peer
 
         super(LocalNode, self).__init__(routing.Hash(value=data),
                                         self.listener.local)
@@ -662,6 +664,7 @@ class LocalNode(chordnode.ChordNode):
         """
         L.debug("New peer from %s:%d", *new_peersock.remote)
         self.processor.add_socket(new_peersock, self.process)
+        self.on_peer(new_peersock.remote)
 
     @property
     def is_valid(self):

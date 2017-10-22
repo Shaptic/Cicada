@@ -25,11 +25,7 @@ _Cicada_ comes with sample applications, but its up to you to use the library to
 ### Attacker Resilience ###
 Traditionally, if a peer were to communicate with another peer, the traffic would take a single route through the network topology to get to the other peer. If there is a malicious agent in the network, they could rewrite unencrypted traffic and inject arbitrary payloads. To work around this, traffic can be forked and sent through multiple peers throughout the network simultaneously. This increases overall load on the network, naturally, but is a small price to pay in ensuring that your data isn't messed with in-transit.
 
-To use this feature, just pass `--duplicate [number of duplicate paths]` to the _Cicada_ command-line, or pass the keyword argument `duplicates` to the `SwarmPeer` API object.
-
-    $ cicada localhost:10000 --join 10.0.0.1:50000 --duplicate 3
-
-This can further be customized on a _per-message_ basis (which obviously requires full API interaction):
+To use this feature, pass the `duplicates` keyword argument on a _per-message_ basis when using the API:
 
 ```python
 peer = SwarmPeer("localhost", 10000)
@@ -50,10 +46,12 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
 # Feature Work #
 There is still a long way to go before _Cicada_ has a robust enough feature set for consumption. This section outlines future plans. In the short term:
 
+  - [x] Add more hobust hooks into various swarm events.
+  - [ ] Add arbitrary data to **all** _Chord_ message types, so that we can have a faster handshake for the data layer rather than forcing them to operate past the `LOOKUP` layer.
   - [ ] Improve resilience to peers dropping.
   - [ ] Add proper per-peer logging so debugging isn't miserable, and maybe a log viewer to go with it?
   - [ ] Fix socket error handling, popping the sockets off the stream list.
-  - [ ] Refactor the _Cicada_-layer protocol to have better packing, especially regarding the message types.
+  - [x] Refactor the _Cicada_-layer protocol to have better packing, especially regarding the message types.
   - [ ] Decide on a license and add it.
   - [ ] Try breaking hash-chaining and write tests for it.
   - [ ] Upgrade the library to Python 3.
@@ -95,5 +93,5 @@ If you want to hard-code secret keys, configure a key file like so:
 
 Then, just pass it to the command-line. Any communications between the localhost and the peer at `75.23.66.101` will be encrypted _if the other peer is also aware of the encryption keys_.
 
-    $ cicada wlan0:10000 --join 75.23.66.101:50000 --keys keylist.json
+    $ ./cicada.py -p 10000 --join 75.23.66.101:50000 --keys keylist.json
 

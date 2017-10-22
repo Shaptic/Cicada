@@ -33,6 +33,7 @@ import cicada
 from   cicada.swarmlib.swarmnode import SwarmPeer
 from   cicada.chordlib.utils     import InfiniteThread
 
+
 def get_console_size():
     return map(int, os.popen('stty size', 'r').read().split())
 
@@ -135,6 +136,7 @@ class Parser(object):
             ("/connect ",   self._connect_handler),
             ("/join ",      self._join_handler),
             ("/part ",      self._join_handler),
+            ("/msg ",       self._pm_handler),
             ("/help",       self._help_handler),
             ("/quit",       self._quit_handler),
             ("/stats",      self._stat_handler),
@@ -150,6 +152,9 @@ class Parser(object):
 
         send_message(self.config, self.host, self.user.username, text)
         self.output.writeln(text, self.user.username)
+
+    def new_user(self, address):
+        self.users[address] = "[none]"
 
     def _connect_handler(self, args):
         parts = args.split(":")
@@ -173,11 +178,9 @@ class Parser(object):
     def _part_handler(self, args):
         pass
 
-    def _msg_handler(self, args):
+    def _pm_handler(self, args):
         target, text = args.split(' ', 1)
-        send_message(self.config, self.host, self.user.username, text,
-                     channel="#general", to=target)
-
+        send_message(self.config, self.host, self.user.username, text)
 
     def _stat_handler(self, args):
         self.output.writeln("Listening on %s:%d." % self.host.listener)
@@ -227,12 +230,13 @@ def main():
     user = User(username)
     textinput = TextEntry(user)
 
-    root = SwarmPeer({})
+    root = SwarmPeer()
     root.bind("localhost", random.randint(5000, 60000))
     user.add_channel("#general")
 
     output_win = OutputWindow()
     parser = Parser(root, output_win, user, config)
+    root.hooks["new_peer"] = parser.new_user
 
     reader = ReceiverThread(root, output_win)
     reader.start()

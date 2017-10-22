@@ -202,9 +202,6 @@ class MessageType(object):
     MSG_CH_ERROR    = 0x00FF
     MSG_CH_MAX      = 0x00FF                # last Chord-type message
 
-    MSG_CI_DATA     = 0xFF00                # first Cicada-type message
-    MSG_CI_BCAST    = 0xFF01
-
     # A simple constant-to-string conversion table for human-readability.
     LOOKUP = {
         MSG_CH_JOIN:    "JOIN",
@@ -213,8 +210,6 @@ class MessageType(object):
         MSG_CH_INFO:    "INFO",
         MSG_CH_QUIT:    "QUIT",
         MSG_CH_ERROR:   "ERROR",
-        MSG_CI_DATA:    "DATA",
-        MSG_CI_BCAST:   "BCAST",
     }
 
 

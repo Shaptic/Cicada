@@ -1,14 +1,53 @@
 #!/usr/bin/env python2
 """ Defines various packet structures for the higher-level Ciacada protocol.
 """
-
+import enum
 import struct
 
 from .           import message
 from ..chordlib  import routing
 
 
-class BroadcastMessage(message.BaseMessage):
+class MessageType(enum.IntEnum):
+    """ Describes the various types of messages in the Cicada protocol.
+    """
+    MSG_CI_DATA     = 0xFF00
+    MSG_CI_BCAST    = 0xFF01
+
+# A simple constant-to-string conversion table for human-readability.
+MessageLookup = {
+    MessageType.MSG_CI_DATA:    "DATA",
+    MessageType.MSG_CI_BCAST:   "BCAST",
+}
+
+
+class CicadaBaseMessage(object):
+    """ The base class for all Cicada messages.
+    """
+    __metaclass__ = message.FormatMetaclass
+    RAW_FORMAT = ["H"]
+
+    def pack(self):
+        return struct.pack("!" + ''.join(CicadaBaseMessage.RAW_FORMAT),
+                           int(self.type))
+
+    @classmethod
+    def make_packet(cls, *args, **kwargs):
+        pkt = cls(*args, **kwargs)
+        pkt.type = cls.CI_TYPE
+        return pkt
+
+    @staticmethod
+    def unpack(bs):
+        fmt = ''.join(CicadaBaseMessage.FORMAT)
+        return bs[struct.calcsize(fmt):]
+
+    @property
+    def msg_type(self):
+        return MessageLookup[self.type]
+
+
+class BroadcastMessage(CicadaBaseMessage):
     """ A raw data packet to broadcast on the network.
 
     The broadcasting algorithm tries to avoid unnecessary packet duplication by
@@ -18,9 +57,8 @@ class BroadcastMessage(message.BaseMessage):
     recepients to the list, popping off the oldest peers.
     """
     MAX_QUEUE_LENGTH = routing.BITCOUNT
-    SECONDARY_TYPE = message.MessageType.MSG_CI_BCAST
+    CI_TYPE = MessageType.MSG_CI_BCAST
     RAW_FORMAT = [
-        "H",    # message type
         "I",    # the number of hashes in the queue, N
         "%ds",  # the hash queue itself, N-length (injected at runtime)
         "I",    # data length
@@ -62,10 +100,11 @@ class BroadcastMessage(message.BaseMessage):
             message.PackedHash(x).pack() for x in self.visited
         ])
 
+        import pdb; pdb.set_trace()
         dlen = len(self.data)
         plen = len(packed_hashes)
-        return struct.pack('!' + self.FORMAT % (plen, dlen),
-                           self.SECONDARY_TYPE,
+        return super(BroadcastMessage, self).pack() + \
+               struct.pack('!' + self.FORMAT % (plen, dlen),
                            len(self.visited), packed_hashes,
                            dlen, self.data)
 
@@ -75,12 +114,13 @@ class BroadcastMessage(message.BaseMessage):
 
         offset = 0
         hashsize = message.PackedHash.MESSAGE_SIZE
-        _,       offset = get(cls.RAW_FORMAT[0])
-        vlen,    offset = get(cls.RAW_FORMAT[1])
+
+        bs = CicadaBaseMessage.unpack(bs)
+        vlen,    offset = get(cls.RAW_FORMAT[0])
         voffset         = offset
-        visited, offset = get(cls.RAW_FORMAT[2] % (hashsize * vlen))
-        dlen,    offset = get(cls.RAW_FORMAT[3])
-        data,    offset = get(cls.RAW_FORMAT[4] % dlen)
+        visited, offset = get(cls.RAW_FORMAT[1] % (hashsize * vlen))
+        dlen,    offset = get(cls.RAW_FORMAT[2])
+        data,    offset = get(cls.RAW_FORMAT[3] % dlen)
 
         visited = [
             message.PackedHash.unpack(bs[i : i + hashsize])[0] \
@@ -94,21 +134,20 @@ class BroadcastMessage(message.BaseMessage):
                self.data[:16], len(self.visited))
 
 
-class DataMessage(message.BaseMessage):
+class DataMessage(CicadaBaseMessage):
     RAW_FORMAT = [
-        "H",
         "I",
         "%ds",
     ]
-    SECONDARY_TYPE = message.MessageType.MSG_CI_DATA
+    CI_TYPE = MessageType.MSG_CI_DATA
 
     def __init__(self, data):
         super(DataMessage, self).__init__()
         self.data = data
 
     def pack(self):
-        return struct.pack('!' + self.FORMAT % len(self.data),
-                           self.SECONDARY_TYPE,
+        return super(DataMessage, self).pack() + \
+               struct.pack('!' + self.FORMAT % len(self.data),
                            len(self.data), self.data)
 
     @classmethod
@@ -116,8 +155,8 @@ class DataMessage(message.BaseMessage):
         get = lambda f: message.MessageContainer.extract_chunk(f, bs, offset)
 
         offset = 0
-        _,      offset = get(cls.RAW_FORMAT[0])
-        dlen,   offset = get(cls.RAW_FORMAT[1])
-        data,   offset = get(cls.RAW_FORMAT[2] % dlen)
+        bs = CicadaBaseMessage.unpack(bs)
+        dlen,   offset = get(cls.RAW_FORMAT[0])
+        data,   offset = get(cls.RAW_FORMAT[1] % dlen)
 
         return DataMessage(data)
