@@ -52,6 +52,7 @@ There is still a long way to go before _Cicada_ has a robust enough feature set 
 
   - [x] Update the in-code comments to make sure everything is current.
   - [ ] Improve resilience to peers dropping.
+  - [x] Add NatPMP support.
   - [ ] Differentiate between local binding address and swarm-wide peer ID, which depends on the external IP address.
   - [x] Add `duplicates=` support to the command-line interface.
   - [x] Improve the CLI client to use the high-level `SwarmPeer` API.

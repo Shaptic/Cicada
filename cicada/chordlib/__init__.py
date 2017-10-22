@@ -46,5 +46,5 @@ h = logging.FileHandler("cicada.log", mode="w")
 h.setFormatter(ChordFormatter())
 
 L = log = logging.getLogger(__name__)
-L.setLevel(logging.DEBUG)
+L.setLevel(logging.INFO)
 L.addHandler(h)

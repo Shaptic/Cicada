@@ -38,11 +38,12 @@ class UPnP(portmapper.PortMapper):
         except:
             self._remove_from_cache(local_port)
 
-    def delete_port_mapping(self, external_port, protocol="tcp"):
+    def delete_port_mapping(self, local_port, protocol="tcp"):
         """ Removes an existing port mapping.
         """
         try:
-            return self._upnp.deleteportmapping(external_port, protocol)
+            return self._upnp.deleteportmapping(self._mappings[local_port],
+                                                protocol)
         except:
             return False
 

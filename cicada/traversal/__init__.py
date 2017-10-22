@@ -31,11 +31,12 @@ class PortMapping(object):
             self.port = None
             return False
 
-        print "Succeeded in mapping %d:%d." % (self.port, self.port)
+        self.eport = self.mapper.mappings[self.port][0]
+        print "Succeeded in mapping %d:%d." % (self.port, self.eport)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         if not self.port: return
-        print "Removed mapping %d:%d." % (self.port, self.port)
+        print "Removed mapping %d:%d." % (self.port, self.eport)
         self.mapper.delete_port_mapping(self.port, self.protocol)
 

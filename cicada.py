@@ -156,7 +156,7 @@ def main(args):
             print "  - Enabling UPnP in your router."
             return
 
-        # if args.no_forwarding:
+        # if args.forward:
         ip = args.interface
         # else:
         #     ip = traversal.PortMapper.external_ip
@@ -182,22 +182,24 @@ if __name__ == "__main__":
                         help="")
     parser.add_argument("--interface", metavar="IFACE", default="",
                         help="the interface to bind on")
-    parser.add_argument("--port", metavar="N", default=0xC1CA, type=int,
+    parser.add_argument("-p", "--port", metavar="N", default=0xC1CA, type=int,
                         help="the internal (and external!) port to listen on "
                              "(defaults to 0xC1CA, or 49610)")
-    parser.add_argument("--no-forwarding", default=False, action="store_true",
+    parser.add_argument("--no-port-mapping", default=True, dest="forward",
+                        action="store_false",
                         help="don't attempt to perform an external mapping")
     parser.add_argument("--timeout", default=10, type=int,
                         help="the amount of time to wait while joining")
-    parser.add_argument("--forwarding-attempts", default=5, type=int,
+    parser.add_argument("--mapping-attempts", default=5, metavar="N",
+                        type=int, dest="attempts",
                         help="the number of ports to try for port mapping, "
-                             "starting from the port passed in")
+                             "starting from the port passed in (default=5)")
     parser.add_argument("--join", metavar="HOST:PORT",
                         help="joins an existing Cicada ring")
     parser.add_argument("--stdout", dest="screenlog", action="store_true",
                         help="write all logging output to stdout in addition "
                              "to the log file")
-    parser.add_argument("--debug", dest="debuglog", action="store_true",
+    parser.add_argument("-d", "--debug", dest="debuglog", action="store_true",
                         help="include DEBUG-level output in logging")
     args = parser.parse_args()
 
