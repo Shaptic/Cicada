@@ -141,7 +141,6 @@ class SwarmPeer(object):
                 data = pkt.data
 
             else:
-                import pdb; pdb.set_trace()
                 raise ValueError("Received unknown data packet.")
 
             return source, data, self._read_queue.ready

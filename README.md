@@ -46,15 +46,15 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
 # Feature Work #
 There is still a long way to go before _Cicada_ has a robust enough feature set for consumption. This section outlines future plans. In the short term:
 
-  - [x] Add more hobust hooks into various swarm events.
   - [ ] Add arbitrary data to **all** _Chord_ message types, so that we can have a faster handshake for the data layer rather than forcing them to operate past the `LOOKUP` layer.
   - [ ] Improve resilience to peers dropping.
   - [ ] Add proper per-peer logging so debugging isn't miserable, and maybe a log viewer to go with it?
   - [ ] Fix socket error handling, popping the sockets off the stream list.
-  - [x] Refactor the _Cicada_-layer protocol to have better packing, especially regarding the message types.
   - [ ] Decide on a license and add it.
   - [ ] Try breaking hash-chaining and write tests for it.
   - [ ] Upgrade the library to Python 3.
+  - [x] Add more hobust hooks into various swarm events.
+  - [x] Refactor the _Cicada_-layer protocol to have better packing, especially regarding the message types.
   - [x] Update the in-code comments to make sure everything is current.
   - [x] Add NatPMP support.
   - [x] Differentiate between local binding address and swarm-wide peer ID, which depends on the external IP address.
