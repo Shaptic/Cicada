@@ -11,11 +11,13 @@ Features:
   - Improved user performance
 
 ## Installation ##
-There are almost no dependencies outside of an updated `enum` module, though `pygame` is required to use the visualization tools. There are multiple ways of interacting with the _Cicada_ library:
+There are a few minor dependencies that are easily `pip`able; the biggest requirement is that `pygame` is used in the visualization tools. There are multiple ways of interacting with the _Cicada_ library:
 
-  - The `cicada.py` script is a command-line interface for both creating a swarm and joining an existing swarm. See the `--help` for details.
-  - The `visualizer.py` script is a visualizer that lets you arbitrarily connect a swarm of peers, watch them exchange messages, and stabilize. See the [Visualizer section](#visualizer) for controls.
-  - The `samples/` directory holds a handful of applications for the library, one of which is a single-room chat messenger.
+  - The `cicada.py` script is a command-line interface for both creating a swarm and joining an existing swarm. You define a runtime configuration that executes commands in sequence. See the `--help` for details.
+  - The `visualizer.py` script is a visualizer that lets you arbitrarily connect a swarm of peers, watch them exchange messages, and stabilize. See the [Visualization section](#visualization) for controls.
+  - The `samples/` directory holds a handful of applications for the library, one of which is a single-room chatting app.
+
+Unfortunately, the library is currently only available on Linux (and possible OS X) because of the dependencies I use for NAT traversal (specifically, [`pynetinfo`](https://github.com/sassanp/pynetinfo)). I'll be looking into a cross-platform solution soon.
 
 ### Using Cicada in Your Application ###
 _Cicada_ comes with sample applications, but its up to you to use the library to create a peer-to-peer application of your own. This could be a large variety of decentralized applications, such as secure chat communcation, file-sharing, or efficient mesh networking.
@@ -44,26 +46,15 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
   - Select a peer and press **B** to send a broadcast packet to the entire network that peer is connected to.
 
 # Feature Work #
-There is still a long way to go before _Cicada_ has a robust enough feature set for consumption. This section outlines future plans. In the short term:
+There is still a long way to go before _Cicada_ has a robust enough feature set for general consumption; this section outlines future plans. Subsections define larger feature sets, but in the short term:
 
-  - [ ] Add arbitrary data to **all** _Chord_ message types, so that we can have a faster handshake for the data layer rather than forcing them to operate past the `LOOKUP` layer.
+  - [ ] Add arbitrary data to **all** _Chord_ message types, so that we can have a faster handshake for the data layer rather than forcing them to operate in the `LOOKUP` layer.
   - [ ] Improve resilience to peers dropping.
-  - [ ] Add proper per-peer logging so debugging isn't miserable, and maybe a log viewer to go with it?
+  - [ ] Add proper per-peer logging so debugging isn't miserable.
   - [ ] Fix socket error handling, popping the sockets off the stream list.
-  - [ ] Decide on a license and add it.
   - [ ] Try breaking hash-chaining and write tests for it.
+  - [ ] Decide on a license and add it.
   - [ ] Upgrade the library to Python 3.
-  - [x] Add more hobust hooks into various swarm events.
-  - [x] Refactor the _Cicada_-layer protocol to have better packing, especially regarding the message types.
-  - [x] Update the in-code comments to make sure everything is current.
-  - [x] Add NatPMP support.
-  - [x] Differentiate between local binding address and swarm-wide peer ID, which depends on the external IP address.
-  - [x] Add `duplicates=` support to the command-line interface.
-  - [x] Improve the CLI client to use the high-level `SwarmPeer` API.
-  - [x] ~~Introduce a way for a neighboring peer to immediately requery for the new successor, rather than waiting for the arbitrary stabilization routine or an `INFO` ping.~~
-  - [x] Refactor message queueing so it doesn't arbitrarily search for the suffix bytes, since that breaks when someone actually tries sending them as high-level data.
-  - [x] Convert the docstring tests to unit tests.
-  - [x] Write more unit tests.
 
 ## Port Forwarding ##
 Most people use devices on personal networks, and are thus hidden behind a router that is doing **n**etwork **a**ddress **t**ranslation (NAT). Similar to how BitTorrent needs to temporarily open ports in order to seed content, we need to do likewise in order to facilitate new peers into the swarm through a local peer. To do this, we use similar techniques to libtorrent, namely [NatPMP](https://tools.ietf.org/html/rfc6886) and [UPnP](https://tools.ietf.org/html/rfc6970). These will allow you to create a swarm peer without worrying about whether or not it will be able to be accessed from the Internet.  
