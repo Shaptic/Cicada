@@ -55,6 +55,7 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
 There is still a long way to go before _Cicada_ has a robust enough feature set for general consumption; this section outlines future plans. Subsections define larger feature sets, but in the short term:
 
   - [ ] Add arbitrary data to **all** _Chord_ message types, so that we can have a faster handshake for the data layer rather than forcing them to operate in the `LOOKUP` layer.
+  - [ ] Consolidate the parameters to `cicada.py` to be a robust `--bind`.
   - [ ] Improve resilience to peers dropping.
   - [ ] Add proper per-peer logging so debugging isn't miserable.
   - [ ] Fix socket error handling, popping the sockets off the stream list.

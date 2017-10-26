@@ -38,6 +38,7 @@ def handle_failed_request(fn):
     If peer shuts down with pending requests, the handler is called with a
     `None` message. Here, we validate against that, returning `False` if needed.
     """
+    @functools.wraps(fn)
     def wrapper(self, sock, msg):
         if msg is None:
             L.warning("INFO request failed to get response because the "
@@ -248,7 +249,7 @@ class LocalNode(chordnode.ChordNode):
 
     @handle_failed_request
     def on_join_response(self, sock, msg):
-        """ Processes a JOIN response and creates the successor connection.
+        """ Processes a `JOIN` response and creates the successor connection.
         """
         response = chordpkt.JoinResponse.unpack(msg.data)
 

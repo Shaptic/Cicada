@@ -2,6 +2,7 @@
 """
 import struct
 import socket
+import functools
 
 from .. import chordlib
 from .. import packetlib
@@ -19,6 +20,7 @@ class SwarmException(Exception):
 
 
 def bind_first(fn):
+    @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
         if self.peer is None:
             raise SwarmException("You must call bind() before connect().")
