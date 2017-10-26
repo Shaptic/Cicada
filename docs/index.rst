@@ -3,6 +3,10 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+.. |br| raw:: html
+
+   <br />
+
 Welcome to Cicada's documentation!
 ==================================
 Cicada is a resilient communication framework with peer-to-peer routing.
@@ -64,7 +68,9 @@ This increases overall load on the network, naturally, but is a small price to
 pay in ensuring that your data isn't messed with in-transit.
 
 To use this feature, pass the ``duplicates`` keyword argument on a *per-message*
-basis when using the API::
+basis when using the API:
+
+.. code-block:: python
 
     peer = SwarmPeer("localhost", 10000)
     peer.connect("10.0.0.1", 50000)
@@ -97,8 +103,7 @@ peer. To do this, we use similar techniques to libtorrent, namely `NatPMP
 <https://tools.ietf.org/html/rfc6886>`_ and `UPnP
 <https://tools.ietf.org/html/rfc6970>`_. These will allow you to create a swarm
 peer without worrying about whether or not it will be able to be accessed from
-the Internet.
-**Estimated Release**: 0.3.0-alpha
+the Internet. |br| **Estimated Release**: 0.3.0-alpha
 
 Security & Encryption
 ---------------------
@@ -114,12 +119,16 @@ telephone call, exchanging symmetric keys in person, etc. Once these keys are
 exchanged, *Cicada* can use them directly to encrypt all outgoing communication
 to a particular peer.
 
-If you trust the network (or at least the majority of it -- see the `Attacker Resilience <#attacker-resilience>`_ section below), you can use standard public-key authentication methods to establish an SSL communcation stream between particular peers. That is to say, the traffic is still routed through the other peers, but is encrypted with SSL.
-**Estimated Release**: 1.0.0-rc
+If you trust the network (or at least the majority of it -- see the `Attacker
+Resilience <#attacker-resilience>`_ section below), you can use standard public-key
+authentication methods to establish an SSL communcation stream between
+particular peers. That is to say, the traffic is still routed through the other
+peers, but is encrypted with SSL. |br| **Estimated Release**: 1.0.0-rc
 
-If you want to hard-code secret keys, configure a key file like so::
+If you want to hard-code secret keys, configure a key file like so:
 
-    // keylist.json
+.. code-block:: json
+
     {
       "trusted_hosts": [{
         "address": "75.23.66.101",
