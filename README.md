@@ -11,13 +11,19 @@ Features:
   - Improved user performance
 
 ## Installation ##
-There are a few minor dependencies that are easily `pip`able; the biggest requirement is that `pygame` is used in the visualization tools. There are multiple ways of interacting with the _Cicada_ library:
+There are a few minor dependencies that are easily `pip`able; the biggest requirement is that `pygame` is used in the visualization tools:
 
-  - The `cicada.py` script is a command-line interface for both creating a swarm and joining an existing swarm. You define a runtime configuration that executes commands in sequence. See the `--help` for details.
+```bash
+$ pip install -r requirements.txt
+```
+
+There are multiple ways of interacting with the _Cicada_ library:
+
+  - The `cicada.py` script is a command-line interface for both creating a swarm and joining an existing swarm. You define a runtime configuration that executes commands in sequence. See `runtime.md` in the documentation folder for details.
   - The `visualizer.py` script is a visualizer that lets you arbitrarily connect a swarm of peers, watch them exchange messages, and stabilize. See the [Visualization section](#visualization) for controls.
   - The `samples/` directory holds a handful of applications for the library, one of which is a single-room chatting app.
 
-Unfortunately, the library is currently only available on Linux (and possible OS X) because of the dependencies I use for NAT traversal (specifically, [`pynetinfo`](https://github.com/sassanp/pynetinfo)). I'll be looking into a cross-platform solution soon.
+> Unfortunately, the library is currently only available on Linux (and possible OS X) because of the dependencies I use for NAT traversal (specifically, [`pynetinfo`](https://github.com/sassanp/pynetinfo)). I'll be looking into a cross-platform solution soon.
 
 ### Using Cicada in Your Application ###
 _Cicada_ comes with sample applications, but its up to you to use the library to create a peer-to-peer application of your own. This could be a large variety of decentralized applications, such as secure chat communcation, file-sharing, or efficient mesh networking.
