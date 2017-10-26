@@ -72,13 +72,12 @@ In a peer-to-peer network, it's impossible to determine what peers your traffic 
 
 The only way to _ensure_ secure communications that are immune to Man-in-the-Middle attacks and packet sniffing is to establish a trusted set of encryption keys before using the network. This can be via secure email, and encrypted telephone call, exchanging symmetric keys in person, etc. Once these keys are exchanged, _Cicada_ can use them directly to encrypt all outgoing communication to a particular peer.
 
-If you trust the network (or at least the majority of it -- see the [Attacker Resilience](#attacker-resilience) section below), you can use standard public-key authentication methods to establish an SSL communcation stream between particular peers. That is to say, the traffic is still routed through the other peers, but is encrypted with SSL.  
+If you trust the network (or at least the majority of it -- see the [Attacker Resilience](#attacker-resilience) section), you can use standard public-key authentication methods to establish an SSL communcation stream between particular peers. That is to say, the traffic is still routed through the other peers, but is encrypted with SSL.  
 **Estimated Release**: 1.0.0-rc
 
 If you want to hard-code secret keys, configure a key file like so:
 
 ```json
-// keylist.json
 {
   "trusted_hosts": [{
     "address": "75.23.66.101",

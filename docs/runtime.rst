@@ -6,24 +6,24 @@ interact with the *Cicada* API.
 Each line is executed in order, and has a set of required parameters. Comment
 lines start with a ``#`` and are ignored.
 
-  - ``SEND [host] [port] [data...]``
-    Sends a message to a particular address. ``[port]`` must be convertible to
-    an integer.
+- ``SEND [host] [port] [data...]``
+  Sends a message to a particular address. ``[port]`` must be convertible to
+  an integer.
 
-  - ``RECV [count]``
-    Waits for a message to be received from anyone. The ``[count]`` parameter is
-    optional, and indicates the number of messages to wait for.
+- ``RECV [count]``
+  Waits for a message to be received from anyone. The ``[count]`` parameter is
+  optional, and indicates the number of messages to wait for.
 
-  - ``BCAST [data...]``
-    Sends the specified data to the entire swarm.
+- ``BCAST [data...]``
+  Sends the specified data to the entire swarm.
 
-  - ``OPT key1=value key2=value [key=value...]``
-    Processes and sets the `configurable options <#configurable-options>`_. All
-    subsequent lines will have these options applied to them.
+- ``OPT key1=value key2=value [key=value...]``
+  Processes and sets the `configurable options <#configurable-options>`_. All
+  subsequent lines will have these options applied to them.
 
-  - ``WAIT [time (s)]``
-    Waits for an incoming connection for a certain amount of time. If set to -1,
-    waits indefinitely. This is useful for the first peer in a swarm.
+- ``WAIT [time (s)]``
+  Waits for an incoming connection for a certain amount of time. If set to -1,
+  waits indefinitely. This is useful for the first peer in a swarm.
 
 Configurable Options
 --------------------
