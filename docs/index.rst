@@ -7,12 +7,14 @@
 
    <br />
 
+.. |travis| image:: https://travis-ci.org/Shaptic/Cicada.svg?branch=master
+.. |release| image:: https://img.shields.io/github/release/Shaptic/Cicada/all.svg
+
 Welcome to Cicada's documentation!
 ==================================
 Cicada is a resilient communication framework with peer-to-peer routing.
 
-.. image:: https://travis-ci.org/Shaptic/Cicada.svg?branch=master
-.. image:: https://img.shields.io/github/release/Shaptic/Cicada/all.svg
+|travis| |release|
 
 Features:
 
