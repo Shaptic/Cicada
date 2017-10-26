@@ -16,10 +16,10 @@ Cicada is a resilient communication framework with peer-to-peer routing.
 
 Features:
 
-  - Lower bandwidth requirements for service providers
-  - Highly-efficient and resilient routing between users
-  - Safe & secure encryption among trusted peers
-  - Improved user performance
+- Lower bandwidth requirements for service providers
+- Highly-efficient and resilient routing between users
+- Safe & secure encryption among trusted peers
+- Improved user performance
 
 Installation
 ------------
@@ -28,17 +28,20 @@ requirement is that ``pygame`` is used in the visualization tools::
 
     $ pip install -r requirements.txt
 
+If you want to build the documentation as well, install the
+``full_requirements.txt``, which contains all of the Sphinx dependencies.
+
 There are multiple ways of interacting with the *Cicada* library:
 
-  - The ``cicada.py`` script is a command-line interface for both creating a
-    swarm and joining an existing swarm. You define a runtime configuration that
-    executes commands in sequence. See ``runtime.md`` in the documentation
-    folder for details.
-  - The ``visualizer.py`` script is a visualizer that lets you arbitrarily
-    connect a swarm of peers, watch them exchange messages, and stabilize. See
-    the `Visualization section <#visualization>`_ for controls.
-  - The ``samples/`` directory holds a handful of applications for the library,
-    one of which is a single-room chatting app.
+- The ``cicada.py`` script is a command-line interface for both creating a swarm
+  and joining an existing swarm. You define a runtime configuration that
+  executes commands in sequence. See ``runtime.md`` in the documentation folder
+  for details.
+- The ``visualizer.py`` script is a visualizer that lets you arbitrarily connect
+  a swarm of peers, watch them exchange messages, and stabilize. See the
+  `Visualization section <#visualization>`_ for controls.
+- The ``samples/`` directory holds a handful of applications for the library,
+  one of which is a single-room chatting app.
 
 .. topic:: Platforms
 
@@ -81,12 +84,12 @@ Visualization
 When running the *Cicada* visualization tool, ``visualizer.py``, there are a
 number of controls for manipulating the behavior of the peers:
 
-  - Press **R** to join all peers together into a single network at random.
-  - Click a peer, press **J**, then click another peer in order to join the former to the latter.
-  - Pressing **L** between peers performs a lookup on the network on the latter's ID.
-  - Select a peer and press **F** to dump the peer's finger table.
-  - Select a peer and press **P** to dump its full list of known peers.
-  - Select a peer and press **B** to send a broadcast packet to the entire network that peer is connected to.
+- Press **R** to join all peers together into a single network at random.
+- Click a peer, press **J**, then click another peer in order to join the former to the latter.
+- Pressing **L** between peers performs a lookup on the network on the latter's ID.
+- Select a peer and press **F** to dump the peer's finger table.
+- Select a peer and press **P** to dump its full list of known peers.
+- Select a peer and press **B** to send a broadcast packet to the entire network that peer is connected to.
 
 Feature Work
 ============
