@@ -159,9 +159,9 @@ Then, just pass it to the command-line. Any communications between the localhost
 and the peer at ``75.23.66.101:7000`` will be encrypted *if the other peer is also
 aware of the encryption keys*.
 
-::
+.. code-block:: bash
 
-    $ ./cicada.py -p 10000 --join 75.23.66.101:50000 --keys keylist.json
+    $ ./cicada.py -p 7001 --join 75.23.66.101:7000 --keys keylist.json
 
 
 .. toctree::

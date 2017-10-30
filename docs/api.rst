@@ -1,7 +1,7 @@
 API Documentation
 =================
-This document contains detailed usage and tutorials of the *Cicada* API; it's
-much more robust than what you can see under, say, ``help(swarmlib.swarmnode)``.
+Here we outline detailed usage of the *Cicada* API; it explains much more than
+the *technical* details under, say, ``help(swarmlib.swarmnode)``. For examples and tutorials, see the :doc:`tutorials` page.
 
 
 .. _swarmlib:
@@ -54,7 +54,7 @@ swarm acts like a server for all the others.
        peer = swarmlib.SwarmPeer()
        with traversal.PortMapping(5000) as pm:
            eip = pm.mapper.external_ip
-           peer.bind("192.168.0.100", pm.port, eip, pm.eport)
+           peer.bind(pm.local_address, pm.port, eip, pm.eport)
 
 .. py:method:: SwarmPeer.connect(network_host, network_port[, timeout=10])
 
@@ -73,11 +73,15 @@ swarm acts like a server for all the others.
 
 .. py:method:: SwarmPeer.send(target, data[, duplicates=0])
 
+   Sends a data packet into the Cicada network.
+
    :param tuple target: one of the following: a 2-tuple (hostname, port); a :py:class:`~chordlib.routing.Hash`; or another :py:class:`~swarmnode.SwarmPeer` instance
    :param bytes data: the raw data to pack and send
    :param int duplicates: the amount of extra peers to route the message through; this is related to :ref:`attacker resilience <feature-resilience>`.
 
 .. py:method:: SwarmPeer.recv()
+
+   Blocks until a data message is received from the Cicada network.
 
    :rtype:  (:py:class:`~swarmnode.SwarmPeer`, bytes, bool)
    :return: the source peer that the message came from, the data message we received, and whether or not there are more messages pending
