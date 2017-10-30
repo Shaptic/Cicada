@@ -9,4 +9,4 @@ script:
   - python -m unittest discover -v -s tests/
   - cd docs/
   - make html
-  - python tests/test_tutorial_sample.py
+  - python snippets/test_tutorial_sample.py
