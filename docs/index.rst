@@ -8,13 +8,16 @@
    <br />
 
 .. |travis| image:: https://travis-ci.org/Shaptic/Cicada.svg?branch=master
+.. _travis: https://travis-ci.org/Shaptic/Cicada
+
 .. |release| image:: https://img.shields.io/github/release/Shaptic/Cicada/all.svg
+.. _release: https://github.com/Shaptic/Cicada/releases
 
-Welcome to Cicada's documentation!
-==================================
-Cicada is a resilient communication framework with peer-to-peer routing.
+Cicada Documentation
+====================
+*Cicada* is a resilient communication framework with peer-to-peer routing.
 
-|travis| |release|
+|travis|_ |release|_
 
 Features:
 
@@ -37,15 +40,15 @@ There are multiple ways of interacting with the *Cicada* library:
 
 - The ``cicada.py`` script is a command-line interface for both creating a swarm
   and joining an existing swarm. You define a runtime configuration that
-  executes commands in sequence. See ``runtime.md`` in the documentation folder
-  for details.
+  executes commands in sequence. See the :doc:`runtime` documentation for
+  details.
 - The ``visualizer.py`` script is a visualizer that lets you arbitrarily connect
   a swarm of peers, watch them exchange messages, and stabilize. See the
   `Visualization section <#visualization>`_ for controls.
 - The ``samples/`` directory holds a handful of applications for the library,
   one of which is a single-room chatting app.
 
-.. topic:: Platforms
+.. topic:: \
 
     Unfortunately, the library is currently only available on Linux (and possible
     OS X) because of the dependencies I use for NAT traversal (specifically,
@@ -61,6 +64,10 @@ efficient mesh networking.
 
 Advanced Features
 -----------------
+This section outlines advanced features that are or will be available in
+*Cicada* in the official 1.0 release.
+
+.. _feature-resilience:
 
 Attacker Resilience
 ~~~~~~~~~~~~~~~~~~~
@@ -93,6 +100,8 @@ number of controls for manipulating the behavior of the peers:
 - Select a peer and press **P** to dump its full list of known peers.
 - Select a peer and press **B** to send a broadcast packet to the entire network that peer is connected to.
 
+|
+
 Feature Work
 ============
 There is still a long way to go before *Cicada* has a robust enough feature set
@@ -117,34 +126,37 @@ will travel through on the way to its destination. Standard routing through the
 Internet faces these same implications, but we implicitly trust that network
 topology more (we must, in fact, in order to gain any semblance of security).
 
-The only way to *ensure* secure communications that are immune to Man-in-the-
-Middle attacks and packet sniffing is to establish a trusted set of encryption
-keys before using the network. This can be via secure email, and encrypted
-telephone call, exchanging symmetric keys in person, etc. Once these keys are
-exchanged, *Cicada* can use them directly to encrypt all outgoing communication
-to a particular peer.
+The only way to *ensure* secure communications that are immune to
+Man-in-the-Middle attacks and packet sniffing is to establish a trusted set of
+encryption keys before using the network. This can be via secure email, and
+encrypted telephone call, exchanging symmetric keys in person, etc. Once these
+keys are exchanged, *Cicada* can use them directly to encrypt all outgoing
+communication to a particular peer.
 
-If you trust the network (or at least the majority of it -- see the `Attacker
-Resilience <#attacker-resilience>`_ section below), you can use standard public-key
+If you trust the network (or at least the majority of it -- see the
+:ref:`feature-resilience` section), you can use standard public-key
 authentication methods to establish an SSL communcation stream between
 particular peers. That is to say, the traffic is still routed through the other
 peers, but is encrypted with SSL. |br| **Estimated Release**: 1.0.0-rc
 
-If you want to hard-code secret keys, configure a key file like so:
+If you want to hard-code secret keys, configure a key file like so (choosing one
+of either ``"peer"``, specifying the exact peer ID, or ``"address"``, specifying
+the ``host:port`` pair of the peer):
 
 .. code-block:: json
 
     {
       "trusted_hosts": [{
-        "address": "75.23.66.101",
-        "outbound_key": "supersecretencryptionkey",
-        "inbound_key": "superduperencryptionkey"
+        "peer": "24355304810235874286134060455083535315455785472150272366747243996307578662525",
+        "address": "75.23.66.101:7000",
+        "outbound_key": "outbound_encryption_key",
+        "inbound_key": "  inbound_encryption_key"
       }, {
       }]
     }
 
 Then, just pass it to the command-line. Any communications between the localhost
-and the peer at ``75.23.66.101`` will be encrypted *if the other peer is also
+and the peer at ``75.23.66.101:7000`` will be encrypted *if the other peer is also
 aware of the encryption keys*.
 
 ::
