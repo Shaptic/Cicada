@@ -6,8 +6,8 @@ much more robust than what you can see under, say, ``help(swarmlib.swarmnode)``.
 
 .. _swarmlib:
 
-The ``SwarmPeer`` Object
-------------------------
+Interacting with *Cicada*: :py:class:`~swarmlib.SwarmPeer`
+--------------------------------------------------------------------
 This object is the main way of interacting with the *Cicada* API as it wraps the
 lower-level DHT and routing details. It mimics the official ``socket.socket``
 interface as closely as possible.
@@ -15,7 +15,7 @@ interface as closely as possible.
 Unlike that interface, though, a ``bind`` is *required*, since every peer in the
 swarm acts like a server for all the others.
 
-.. py:module:: swarmnode
+.. py:module:: swarmlib
 .. py:class::  SwarmPeer([hooks={}])
 
    This creates an object, registering a selection of callbacks that hook into
@@ -27,7 +27,7 @@ swarm acts like a server for all the others.
 
     - ``"new_peer"``: called for every time a new :py:class:`SwarmPeer` joins the swarm: ``new_peer(PeerSocket)``.
 
-.. py:method:: SwarmPeer.bind(hostname, port[, external_ip=None, external_port=None])
+.. py:method:: SwarmPeer.bind(addr, port[, external_ip=None, external_port=None])
 
    Binds to a particular address, establishing the listener for this member of a
    *Cicada* swarm. A subsequent :py:meth:`connect` indicates a peer joining an
@@ -37,7 +37,7 @@ swarm acts like a server for all the others.
    be called on a** :py:class:`SwarmPeer` **instance, before any packet
    operations.**
 
-   :param str hostname: either the IP address of a local interface (such as ``eth0``), a hostname like ``localhost``, or an empty string, which would indicate a binding on *all* interfaces.
+   :param str addr: either the IP address of a local interface (such as ``eth0``), a hostname like ``localhost``, or an empty string, which would indicate a binding on *all* interfaces.
    :param int port: the port to bind on, in the range [1025, 65535)
 
    :param external_ip: the external IP address of your host on the network. this applies to NAT traversal situations as seen in the :ref:`example below <nat-example>` where you don't immediately have access to your external network or a port forwarded on your router. see the :py:mod:`traversal` module for details.

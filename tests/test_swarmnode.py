@@ -4,12 +4,12 @@ import time
 import unittest
 sys.path.append(".")
 
-from cicada.swarmlib.swarmnode import SwarmPeer
+from cicada import swarmlib
 
 
 class TestSwarmPeer(unittest.TestCase):
     def test_swarmpeer(self):
-        a, b = SwarmPeer(), SwarmPeer()
+        a, b = swarmlib.SwarmPeer(), swarmlib.SwarmPeer()
         a.bind("localhost", 0xC1CADA & 0xFF00)
         b.bind("localhost", 0xC1CADA & 0xFFFE)
 

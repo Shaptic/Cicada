@@ -70,9 +70,9 @@ class SwarmPeer(object):
         """ Sends a data packet to every peer in the network.
         """
         peers = set(self.peer.routing_table.unique_iter(0))
-
         pkt = cicadapkt.BroadcastMessage.make_packet(data,
             map(lambda x: x.hash, peers), visited=visited)
+
         for peer in filter(lambda p: p.hash not in visited, peers):
             self.peer.lookup(peer.hash, self.NOOP_RESPONSE, None,
                              data=pkt.pack())
