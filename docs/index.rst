@@ -157,7 +157,7 @@ the ``host:port`` pair of the peer):
 
 Then, just pass it to the command-line. Any communications between the localhost
 and the peer at ``75.23.66.101:7000`` will be encrypted *if the other peer is also
-aware of the encryption keys*.
+aware of the encryption keys*:
 
 .. code-block:: bash
 

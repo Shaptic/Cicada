@@ -6,6 +6,8 @@ Tutorials
    :backlinks: none
 
 
+.. _nat-tutorial:
+
 NAT Traversal
 -------------
 This is used for peers behind a router, as is the case for most users. There are
@@ -74,4 +76,5 @@ forth between the peers.
 
 .. include:: snippets/test_tutorial_sample.py
    :literal:
-
+   :code: python
+   :start-line: 3

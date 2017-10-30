@@ -86,9 +86,17 @@ swarm acts like a server for all the others.
    :rtype:  (:py:class:`~swarmnode.SwarmPeer`, bytes, bool)
    :return: the source peer that the message came from, the data message we received, and whether or not there are more messages pending
 
+.. topic:: Developer Note
+
+   This actually returns :py:class:`~chordlib.remotenode.RemoteNode` instance
+   rather than a :py:class:`~swarmnode.SwarmPeer`, currently, because I haven't
+   finished implementing that yet.
+
 
 NAT Traversal Methods
 ---------------------
+See the :ref:`nat-tutorial` tutorial for examples.
+
 .. py:module:: traversal
 .. py:class:: PortMapping(port[, protocol="tcp"])
 
