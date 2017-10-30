@@ -55,7 +55,7 @@ class NatPMP(portmapper.PortMapper):
         response, address = self._socket.recvfrom(12)
         version, opcode, result, seconds, ip = struct.unpack("!BBBII")
 
-        self.externalipaddress = str(ipaddress.IPv4Address(ip))
+        self.external_ip = str(ipaddress.IPv4Address(ip))
         super(UPnP, self).create()
 
     def add_port_mapping(self, local_port, external_port, protocol="tcp",

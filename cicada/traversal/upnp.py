@@ -37,6 +37,7 @@ class UPnP(portmapper.PortMapper):
                                              desc, None)
         except:
             self._remove_from_cache(local_port)
+            return False
 
     def delete_port_mapping(self, local_port, protocol="tcp"):
         """ Removes an existing port mapping.

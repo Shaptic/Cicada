@@ -40,3 +40,5 @@ class PortMapping(object):
         print "Removed mapping %d:%d." % (self.port, self.eport)
         self.mapper.delete_port_mapping(self.port, self.protocol)
 
+from .natpmp import NatPMP
+from .upnp import UPnP

@@ -8,10 +8,7 @@ class PortMapper(object):
     def __init__(self, local_address=None):
         # Learn local interface address, if not provided.
         if not local_address:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            local_address = s.getsockname()[0]
-            s.close()
+            local_address = PortMapper.get_local_address()
 
         self.local_address = local_address
         self.mappings = {}  # { ushort: ushort }, port mappings
@@ -43,3 +40,13 @@ class PortMapper(object):
         """ Removes a port mapping from the internal cache.
         """
         self.mappings.pop(local_port, None)
+
+    @staticmethod
+    def get_local_address():
+        """ Retrieves the local interface address.
+        """
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        addr = s.getsockname()[0]
+        s.close()
+        return addr
