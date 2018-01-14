@@ -12,7 +12,6 @@ from ..packetlib import message as pktmsg
 from ..packetlib import chord   as chordpkt
 from ..packetlib import utils   as pktutils
 from ..packetlib import cicada  as cicadapkt
-# import packetlib.kademlia as kadempkt
 
 
 class SwarmException(Exception):

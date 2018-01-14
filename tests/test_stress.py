@@ -115,9 +115,9 @@ class TestStressStabilization(unittest.TestCase):
                 for peer in loop:
                     print "      %s" % peermap[peer]
                 print "    ========="
-            self.assertTrue(len(all_loops) == 1)
 
-        NodeDist = collections.namedtuple("NodeDist", "node dist")
+        self.assertEqual(len(all_loops), 1)
+
         for peer in peers:
             calc_successor = peer._find_closest_peer_moddist(int(peer.hash), set([peer]))
             if not peer.successor or calc_successor.hash != peer.successor.hash:
@@ -125,7 +125,7 @@ class TestStressStabilization(unittest.TestCase):
                       peer.successor.hash if peer.successor else 0, peer)
 
             self.assertTrue(peer.successor)
-            self.assertTrue(calc_successor.hash == peer.successor.hash)
+            self.assertEqual(calc_successor.hash, peer.successor.hash)
 
 
 if __name__ == '__main__':
