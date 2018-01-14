@@ -174,33 +174,25 @@ class Interval(object):
 
     def within(self, x):
         """ Is `x` within [start, end)? """
-        x = int(x)  # convert from `Hash` object
-        assert x < self.modulus, "checking un-%% value: %s/%d" % (x, HASHMOD)
-        if self.end < self.start:   # interval wraps around mod boundary
-            return utils.in_range(x, self.start, self.modulus) or \
-                   utils.in_range(x, 0, self.end)
-
-        return utils.in_range(x, *self.interval)
+        return self._within(x, self.start, self.end)
 
     def within_open(self, x):
         """ Is `x` within (start, end)? """
-        x = int(x)  # convert from `Hash` object
-        assert x < self.modulus, "checking un-%% value: %s/%d" % (x, HASHMOD)
-        if self.end < self.start:   # interval wraps around mod boundary
-            return utils.in_range(x, self.start + 1, self.modulus) or \
-                   utils.in_range(x, 0, self.end)
-
-        return utils.in_range(x, self.start + 1, self.end)
+        return self._within(x, self.start + 1, self.end)
 
     def within_closed(self, x):
         """ Is `x` within [start, end]? """
+        return self._within(x, self.start, self.end + 1)
+
+    def _within(self, x, btm, top):
         x = int(x)  # convert from `Hash` object
         assert x < self.modulus, "checking un-%% value: %s/%d" % (x, HASHMOD)
-        if self.end < self.start:   # interval wraps around mod boundary
-            return utils.in_range(x, self.start, self.modulus) or \
-                   utils.in_range(x, 0, self.end + 1)
 
-        return utils.in_range(x, self.start, self.end + 1)
+        if self.end < self.start:
+            return utils.in_range(x, btm, self.modulus) or \
+                   utils.in_range(x, 0, top)
+
+        return utils.in_range(x, btm, top)
 
     @property
     def start(self): return self.interval[0]

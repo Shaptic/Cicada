@@ -66,6 +66,7 @@ class LocalNode(chordnode.ChordNode):
         :bind_addr      specifies the address to use for the listener socket.
         :on_send[=n/a]
         :on_data[=n/a]
+        :on_peer[=n/a]
         """
         self.listener = peersocket.PeerSocket(on_send=on_send)
         self.listener.bind(bind_addr)
@@ -124,6 +125,7 @@ class LocalNode(chordnode.ChordNode):
                                      existing_socket=socket)
         self.processor.add_socket(peer.peer_sock, self.process)
         self.peers.add(peer)
+        self.on_peer(peer.peer_sock.remote)
         return peer
 
     def remove_peer(self, peer):

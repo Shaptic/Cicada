@@ -244,13 +244,6 @@ class VisualNode(swarmnode.SwarmPeer):
         - sending responses: we create an outbound dot towards the target that
                              deactivates automatically when it hits the target.
     """
-    class DotType(enum.Enum):
-        UNKNOWN = 0
-        OUTBOUND_REQT = 1
-        OUTBOUND_RESP = 2
-        INBOUND_RESP  = 3
-        INBOUND_REQT  = 4
-
 
     class Dot(pygame.sprite.Sprite):
         """ A visual representation of a message.
@@ -258,18 +251,16 @@ class VisualNode(swarmnode.SwarmPeer):
         It automatically deactivates when it collides with the target.
 
         :msg        a `MessageContainer` instance
-        :dot_type   a `DotType` representing the type of dot
         :dest       the `VisualSprite` that we originated from
         :dest       a `VisualSprite` that we're trying to collide with
         """
-        def __init__(self, msg, dot_type, src, dest):
+        def __init__(self, msg, src, dest):
             self.text = packetlib.message.MessageType.LOOKUP[msg.type][0]
             if msg.is_response: self.text += "r"
 
             self.msg = msg
             self.src = src
             self.dest = dest
-            self.dtype = dot_type
 
             self.active = True
             self.pos = Vector(src.pos)
@@ -312,10 +303,6 @@ class VisualNode(swarmnode.SwarmPeer):
         @staticmethod
         def from_bytes(src, peersock, bs):
             msg = packetlib.message.MessageContainer.unpack(bs)
-            if msg.is_response:
-                dot_type = VisualNode.DotType.OUTBOUND_RESP
-            else:
-                dot_type = VisualNode.DotType.OUTBOUND_REQT
 
             try:
                 pkt = packetlib.chord.generic_unpacker(msg)
@@ -325,14 +312,15 @@ class VisualNode(swarmnode.SwarmPeer):
 
             dest = VisualNode._resolve(peersock)
             if not dest: return None
-            dot = VisualNode.Dot(msg, dot_type, src.sprite, dest.sprite)
+            dot = VisualNode.Dot(msg, src.sprite, dest.sprite)
             src.dots.add(dot)
             return dot
 
 
     def __init__(self, sprite):
         super(VisualNode, self).__init__(hooks={
-            "send": functools.partial(VisualNode.Dot.from_bytes, self)
+            "send": functools.partial(VisualNode.Dot.from_bytes, self),
+            "new_peer": RuntimePatchHack.peer_association,
         })
 
         self.sprite = sprite
@@ -432,15 +420,45 @@ def fix_ring(window, ring):
         degree += 360 / len(ring)
         sprites[i].move(x, y)
 
+
+class RuntimePatchHack(object):
+    @staticmethod
+    def peer_association(peer):
+        print "Original:", peer
+
+
 if __name__ == "__main__":
     pygame.init()
 
-    FONT = pygame.font.SysFont("monospace",  24)
-    FONT2 = pygame.font.SysFont("monospace", 12)
+    FONT = pygame.font.SysFont("monospace",  28)
+    FONT2 = pygame.font.SysFont("monospace", 20)
 
     quit = False
     clock = pygame.time.Clock()
     window = Window()
+
+    def peer_association_callback(peer):
+        """ Associate the receiving socket object with the visual node.
+
+        The `peer` parameter is the address of the new remote endpoint. Thus, we
+        have to first iterate over the ring, searching for the peer with the
+        _local_ endpoint matching this address. This is the peer that needs a
+        hook added.
+        """
+        if peer[1] in xrange(10000, 10000 + len(ring)):
+            return
+
+        for sprite in ring:
+            node = sprite.peer.peer
+            for remote in node.peers:
+                sock = remote.peer_sock
+                if sock.remote == peer:
+                    wrapped = functools.partial(VisualNode.Dot.from_bytes,
+                                                sprite.peer)
+                    sock.hooks["send"] = wrapped
+
+    RuntimePatchHack.peer_association = staticmethod(peer_association_callback)
+
     ring = pygame.sprite.Group([
         VisualSprite(("localhost", 10000 + i)) for i in xrange(10)
     ])

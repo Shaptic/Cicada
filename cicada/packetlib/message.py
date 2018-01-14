@@ -509,7 +509,8 @@ class MessageContainer(object):
             print "  Format[%d]:" % i, fmt
             debug.hexdump(data)
             import pdb; pdb.set_trace()
-            assert False, "Invalid blob."
+            assert False, "Invalid blob; expected=%d, got=%d" % (
+                struct.calcsize('!' + fmt), len(data[i:]))
 
         unpack = struct.unpack('!' + fmt, data[i : i + blob_len])
         return unpack[0] if not keep_chunks else unpack, blob_len + i
