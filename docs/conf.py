@@ -174,7 +174,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
     (master_doc, 'Cicada', u'Cicada Documentation',
-     author, 'Cicada', 'One line description of project.',
+     author, 'Cicada', 'A resilient communication framework with peer-to-peer routing.',
      'Miscellaneous'),
 ]
 

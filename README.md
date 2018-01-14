@@ -23,7 +23,7 @@ There are multiple ways of interacting with the _Cicada_ library:
   - The `visualizer.py` script is a visualizer that lets you arbitrarily connect a swarm of peers, watch them exchange messages, and stabilize. See the [Visualization section](#visualization) for controls.
   - The `samples/` directory holds a handful of applications for the library, one of which is a single-room chatting app.
 
-> Unfortunately, the library is currently only available on Linux (and possible OS X) because of the dependencies I use for NAT traversal (specifically, [`pynetinfo`](https://github.com/sassanp/pynetinfo)). I'll be looking into a cross-platform solution soon.
+> Unfortunately, the library is currently only available on Linux (and possible OS X, but this is also untested) because of the dependencies used for NAT traversal (specifically, [`pynetinfo`](https://github.com/sassanp/pynetinfo)). I'll be looking into a cross-platform solution soon.
 
 ### Using Cicada in Your Application ###
 _Cicada_ comes with sample applications, but its up to you to use the library to create a peer-to-peer application of your own. This could be a large variety of decentralized applications, such as secure chat communcation, file-sharing, or efficient mesh networking.
@@ -55,6 +55,7 @@ When running the _Cicada_ visualization tool, `visualizer.py`, there are a numbe
 There is still a long way to go before _Cicada_ has a robust enough feature set for general consumption; this section outlines future plans. Subsections define larger feature sets, but in the short term:
 
   - [ ] Add arbitrary data to **all** _Chord_ message types, so that we can have a faster handshake for the data layer rather than forcing them to operate in the `LOOKUP` layer.
+  - [ ] Vary stabilization and routing table timings based on swarm churn.
   - [ ] Consolidate the parameters to `cicada.py` to be a robust `--bind`.
   - [ ] Improve resilience to peers dropping.
   - [ ] Add proper per-peer logging so debugging isn't miserable.
