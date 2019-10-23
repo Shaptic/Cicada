@@ -61,13 +61,13 @@ class Hash(object):
 
         else:
             raise TypeError("Expected value or (str, iter, Hash), got: "
-                "value='%s',hashed='%s'" % (value, hashed))
+                            "value='%s',hashed='%s'" % (value, hashed))
 
         assert str(self) == Hash.unpack_hash(self.parts), \
-            "Unpacked hash must match direct hash!"
+               "Unpacked hash must match direct hash!"
 
         assert len(str(self)) == HASHLEN, \
-            "Invalid hash size: %s" % str(self)
+               "Invalid hash size: %s" % str(self)
 
         self._int_cache = sum([
             i << (32 * j) for j, i in enumerate(self.parts[::-1])
@@ -162,6 +162,7 @@ class Hash(object):
             nextval = long_value & 0xFFFFFFFF
             parts.append(int(nextval))
             long_value >>= 32
+
         return parts
 
 
@@ -271,13 +272,7 @@ class RoutingTable(object):
               best preceding value.
             - This usually results in a "remote" value, meaning we will need to
               perform a remote lookup.
-            - If not, go to step 2.
-
-        Theoretically, we could make this a conditional rather than a loop, but
-        because of the feasability that we could cache the routing tables of
-        remote nodes, it won't always result in a remote lookup. This concept,
-        though, will require a security review, since it may enable a single
-        peer to gain way too much information about the rest of the network.
+            - If not, go to step 3.
 
         :value      an integer or `Hash` value to perform a lookup on
         :returns    a 2-tuple of the resulting peer node and a

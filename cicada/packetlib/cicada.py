@@ -100,7 +100,6 @@ class BroadcastMessage(CicadaBaseMessage):
             message.PackedHash(x).pack() for x in self.visited
         ])
 
-        import pdb; pdb.set_trace()
         dlen = len(self.data)
         plen = len(packed_hashes)
         return super(BroadcastMessage, self).pack() + \
